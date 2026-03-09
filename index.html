@@ -556,7 +556,7 @@ function switchTab(name) {
   if(name==='workout') W.render();
   if(name==='measurements') M.render();
   if(name==='sync') I.render();
-  if(name==='coach') Coach.render();
+  if(name==='coach') { Coach._dirty = true; Coach.render(); }
   if(name==='charts') C.render();
 }
 
@@ -902,6 +902,7 @@ const T = {
     entry[key] = entry[key] === val ? 0 : val;
     this.saveDaily(entry);
     this.render();
+    Coach.refreshIfVisible();
   }
 };
 
@@ -1256,6 +1257,7 @@ const F = {
     T.saveDaily(entry);
     this.trackRecent(name, cal);
     this.render();
+    Coach.refreshIfVisible();
   },
 
   removeFood(idx) {
@@ -1263,6 +1265,7 @@ const F = {
     entry.foods.splice(idx, 1);
     T.saveDaily(entry);
     this.render();
+    Coach.refreshIfVisible();
   },
 
   showCustomFood() {
@@ -1650,6 +1653,7 @@ const W = {
     }
 
     this.render();
+    Coach.refreshIfVisible();
   },
 
   renderTodaySummary() {
@@ -1904,6 +1908,7 @@ const I = {
       const data = JSON.parse(text);
       this.processImport(data);
       this.render();
+      Coach.refreshIfVisible();
       showModal(`<h3>Synced!</h3><p style="font-size:15px">Health data imported successfully.</p>
         <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
     } catch(e) {
@@ -1938,7 +1943,21 @@ const I = {
    COACH MODULE — AI-driven recommendations
    ══════════════════════════════════════════ */
 const Coach = {
+  _dirty: false,
+
+  refreshIfVisible() {
+    // If coach tab is active, re-render immediately
+    const coachTab = document.getElementById('tab-coach');
+    if(coachTab && coachTab.classList.contains('active')) {
+      this.render();
+    } else {
+      // Mark dirty so it refreshes when tab is opened
+      this._dirty = true;
+    }
+  },
+
   render() {
+    this._dirty = false;
     const el = document.getElementById('coach-content');
     const health = S.get('healthImport', null);
     const workouts = S.get('workouts', []);
