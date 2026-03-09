@@ -2229,15 +2229,182 @@ const C = {
 
   renderVolume(canvas) {
     const workouts = S.get('workouts', []);
+    const health = S.get('healthImport', null);
+
+    // Collect all dates that have any workout data
+    const allDates = new Set();
+
+    // Volume by date
     const volByDate = {};
     workouts.forEach(w => {
       const vol = w.exercises.reduce((a,e) => a+e.sets.reduce((b,s) => b+s.weight*s.reps, 0), 0);
       volByDate[w.date] = (volByDate[w.date]||0) + vol;
+      allDates.add(w.date);
     });
-    let data = Object.entries(volByDate).map(([x,y]) => ({x, y: Math.round(y)})).sort((a,b) => a.x.localeCompare(b.x));
-    data = this.filterByRange(data);
-    if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 workouts'); return; }
-    drawBarChart(canvas, data, {color:'#10b981', label:'kg vol'});
+
+    // Active cal by date
+    const calByDate = {};
+    if(health && health.activeCal) {
+      health.activeCal.forEach(r => { calByDate[r.date] = (calByDate[r.date]||0) + r.value; allDates.add(r.date); });
+    }
+
+    // Exercise mins by date
+    const minsByDate = {};
+    if(health && health.exerciseMins) {
+      health.exerciseMins.forEach(r => { minsByDate[r.date] = (minsByDate[r.date]||0) + r.value; allDates.add(r.date); });
+    }
+
+    let dates = [...allDates].sort();
+    if(this.range) {
+      const cutoff = addDays(S.today(), -this.range);
+      dates = dates.filter(d => d >= cutoff);
+    }
+
+    if(dates.length < 2) { clearCanvas(canvas, 'Need at least 2 days of workout data'); return; }
+
+    // Build series (only include series that have data)
+    const series = [];
+    const volData = dates.map(d => ({x: d, y: Math.round(volByDate[d] || 0)}));
+    const calData = dates.map(d => ({x: d, y: Math.round(calByDate[d] || 0)}));
+    const minsData = dates.map(d => ({x: d, y: Math.round(minsByDate[d] || 0)}));
+
+    const hasVol = volData.some(d => d.y > 0);
+    const hasCal = calData.some(d => d.y > 0);
+    const hasMins = minsData.some(d => d.y > 0);
+
+    if(!hasVol && !hasCal && !hasMins) { clearCanvas(canvas, 'No workout data'); return; }
+
+    // Use multi-axis approach: draw bars for volume, lines for cal & mins
+    const {ctx, w, h} = setupCanvas(canvas);
+    const pad = {top:20, right:50, bottom:40, left:50};
+    const cw = w - pad.left - pad.right;
+    const ch = h - pad.top - pad.bottom;
+
+    // Left axis: volume (bars)
+    const volMax = Math.max(...volData.map(d=>d.y), 1) * 1.1;
+    // Right axis: active cal / exercise mins (lines)
+    const rightMax = Math.max(
+      hasCal ? Math.max(...calData.map(d=>d.y)) : 0,
+      hasMins ? Math.max(...minsData.map(d=>d.y)) * 5 : 0, // scale mins up
+      1
+    ) * 1.1;
+
+    // Grid lines
+    ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
+    for(let i=0;i<=4;i++){
+      const y = pad.top + ch * (1 - i/4);
+      ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
+      // Left axis labels (volume)
+      if(hasVol) {
+        ctx.fillStyle = '#10b981'; ctx.font = '10px system-ui'; ctx.textAlign = 'right';
+        ctx.fillText(Math.round(volMax*i/4), pad.left-6, y+4);
+      }
+      // Right axis labels (cal)
+      if(hasCal) {
+        ctx.fillStyle = '#f59e0b'; ctx.font = '10px system-ui'; ctx.textAlign = 'left';
+        ctx.fillText(Math.round(rightMax*i/4), w-pad.right+6, y+4);
+      }
+    }
+
+    const gap = cw / dates.length;
+
+    // Bars: volume
+    if(hasVol) {
+      const barW = Math.max(3, gap * 0.5);
+      ctx.fillStyle = 'rgba(16,185,129,0.4)';
+      volData.forEach((d,i) => {
+        if(d.y <= 0) return;
+        const x = pad.left + gap * i + (gap - barW)/2;
+        const barH = (d.y / volMax) * ch;
+        const y = pad.top + ch - barH;
+        ctx.beginPath(); ctx.roundRect(x, y, barW, barH, [3,3,0,0]); ctx.fill();
+      });
+    }
+
+    // Line: active calories
+    if(hasCal) {
+      ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      calData.forEach((d,i) => {
+        const x = pad.left + gap * i + gap/2;
+        const y = pad.top + ch * (1 - d.y / rightMax);
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+      // Dots
+      ctx.fillStyle = '#f59e0b';
+      calData.forEach((d,i) => {
+        if(d.y <= 0) return;
+        const x = pad.left + gap * i + gap/2;
+        const y = pad.top + ch * (1 - d.y / rightMax);
+        ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2); ctx.fill();
+      });
+    }
+
+    // Line: exercise minutes
+    if(hasMins) {
+      ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+      ctx.beginPath();
+      minsData.forEach((d,i) => {
+        const x = pad.left + gap * i + gap/2;
+        const scaledY = d.y * 5; // scale mins to make visible alongside cal
+        const y = pad.top + ch * (1 - scaledY / rightMax);
+        if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      });
+      ctx.stroke();
+      ctx.fillStyle = '#3b82f6';
+      minsData.forEach((d,i) => {
+        if(d.y <= 0) return;
+        const x = pad.left + gap * i + gap/2;
+        const scaledY = d.y * 5;
+        const y = pad.top + ch * (1 - scaledY / rightMax);
+        ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2); ctx.fill();
+      });
+    }
+
+    // X labels
+    ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+    const step = Math.max(1, Math.floor(dates.length / 5));
+    dates.forEach((d,i) => {
+      if(i % step === 0 || i === dates.length-1) {
+        const x = pad.left + gap * i + gap/2;
+        ctx.fillText(d.slice(5), x, h - pad.bottom + 16);
+      }
+    });
+
+    // Legend
+    let lx = pad.left;
+    const ly = h - 6;
+    ctx.font = '11px system-ui';
+    if(hasVol) {
+      ctx.fillStyle = '#10b981'; ctx.fillRect(lx, ly-8, 12, 6); lx += 16;
+      ctx.fillStyle = '#9ca3af'; ctx.textAlign = 'left'; ctx.fillText('Volume (kg)', lx, ly-3); lx += ctx.measureText('Volume (kg)').width + 14;
+    }
+    if(hasCal) {
+      ctx.fillStyle = '#f59e0b'; ctx.fillRect(lx, ly-8, 12, 3); lx += 16;
+      ctx.fillStyle = '#9ca3af'; ctx.textAlign = 'left'; ctx.fillText('Active Cal', lx, ly-3); lx += ctx.measureText('Active Cal').width + 14;
+    }
+    if(hasMins) {
+      ctx.fillStyle = '#3b82f6'; ctx.fillRect(lx, ly-8, 12, 3); lx += 16;
+      ctx.fillStyle = '#9ca3af'; ctx.textAlign = 'left'; ctx.fillText('Exercise Min', lx, ly-3);
+    }
+
+    // Tap handler
+    canvas.onclick = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      let closest = 0, minDist = Infinity;
+      dates.forEach((d,i) => {
+        const x = pad.left + gap * i + gap/2;
+        if(Math.abs(x-cx) < minDist) { minDist = Math.abs(x-cx); closest = i; }
+      });
+      const d = dates[closest];
+      const parts = [];
+      if(volData[closest].y) parts.push(`${volData[closest].y}kg vol`);
+      if(calData[closest].y) parts.push(`${calData[closest].y} cal`);
+      if(minsData[closest].y) parts.push(`${minsData[closest].y} min`);
+      document.getElementById('chart-tap-info').textContent = `${fmtDate(d)}: ${parts.join(' · ') || 'No data'}`;
+    };
   },
 
   renderCalories(canvas) {
