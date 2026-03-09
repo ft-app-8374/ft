@@ -162,13 +162,14 @@ textarea{resize:vertical;min-height:80px}
 .search-item-cal{font-size:16px;font-weight:700;color:#3b82f6;flex-shrink:0;margin-left:12px}
 .search-loading{text-align:center;padding:20px;color:#64748b;font-size:15px}
 
-/* ── Recents ── */
-.recents-row{display:flex;gap:8px;overflow-x:auto;padding:6px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
-.recents-row::-webkit-scrollbar{display:none}
-.recent-chip{flex-shrink:0;background:#1e293b;border:1px solid #334155;border-radius:20px;padding:10px 16px;
-  font-size:14px;font-weight:600;white-space:nowrap;display:flex;align-items:center;gap:6px;transition:all .15s}
+/* ── Recents Grid ── */
+.recents-grid{display:flex;flex-wrap:wrap;gap:8px}
+.recent-chip{background:#1e293b;border:1px solid #334155;border-radius:14px;padding:12px 14px;
+  font-size:14px;font-weight:600;display:flex;flex-direction:column;gap:2px;transition:all .15s;
+  min-width:calc(50% - 4px);flex:1 1 calc(50% - 4px);max-width:calc(50% - 4px)}
 .recent-chip:active{background:#1e3a5f;border-color:#3b82f6;transform:scale(.97)}
-.recent-chip .rc-cal{color:#64748b;font-size:12px;font-weight:500}
+.recent-chip .rc-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.recent-chip .rc-cal{color:#3b82f6;font-size:13px;font-weight:700}
 
 /* ── Barcode Scanner ── */
 #scanner-container{position:relative;width:100%;max-width:400px;margin:0 auto}
@@ -257,22 +258,22 @@ textarea{resize:vertical;min-height:80px}
 <div class="wrap">
   <h2 style="margin-bottom:12px">Food</h2>
 
-  <div class="card" id="recents-card">
-    <h3>Recent Foods</h3>
-    <div class="recents-row" id="recents-row"><span class="muted small">No recent foods yet</span></div>
-  </div>
-
   <div class="card">
-    <h3>Add Food</h3>
+    <h3>Search</h3>
     <div class="food-search-wrap">
-      <input id="food-search" placeholder="Search food (e.g. banana, chicken rice)" autocomplete="off" autocorrect="off">
+      <input id="food-search" placeholder="Search your foods or online database" autocomplete="off" autocorrect="off">
       <button class="food-search-clear hidden" id="food-search-clear" onclick="F.clearSearch()">&times;</button>
     </div>
     <div id="search-results"></div>
+  </div>
+
+  <div class="card" id="recents-card">
+    <h3>Quick Add</h3>
+    <div id="recents-grid"><span class="muted small">Foods you log will appear here for one-tap adding</span></div>
     <div class="spacer"></div>
     <div class="row">
-      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.showScanner()">&#128247; Scan Barcode</button>
-      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.showCustomFood()">+ Custom Entry</button>
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.showScanner()">&#128247; Scan</button>
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.showCustomFood()">+ Custom</button>
     </div>
   </div>
 
@@ -912,6 +913,7 @@ const F = {
   _lastResults: [],
   _scannerStream: null,
   _scannerInterval: null,
+  _searchCache: {},
 
   render() {
     this.renderRecents();
@@ -943,7 +945,9 @@ const F = {
       document.getElementById('food-search-clear').classList.toggle('hidden', !q);
       clearTimeout(this.searchTimeout);
       if(q.length < 2) { document.getElementById('search-results').innerHTML = ''; return; }
-      this.searchTimeout = setTimeout(() => this.doSearch(q), 400);
+      // Show local results instantly, then fetch API
+      this.showLocalResults(q);
+      this.searchTimeout = setTimeout(() => this.doAPISearch(q), 250);
     };
   },
 
@@ -953,19 +957,82 @@ const F = {
     document.getElementById('search-results').innerHTML = '';
   },
 
-  async doSearch(query) {
+  // Search local food history instantly
+  showLocalResults(query) {
     const el = document.getElementById('search-results');
-    el.innerHTML = '<div class="search-loading">Searching...</div>';
+    const q = query.toLowerCase();
+    const recents = this.getRecents();
+    const matches = recents.filter(r => r.name.toLowerCase().includes(q)).slice(0, 5);
+
+    if(!matches.length) {
+      el.innerHTML = '<div class="search-loading">Searching online...</div>';
+      return;
+    }
+
+    let html = '<div class="search-results">';
+    html += '<div style="font-size:12px;color:#64748b;padding:6px 10px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Your Foods</div>';
+    html += matches.map((r, i) =>
+      `<div class="search-item" onclick="F.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal})">
+        <div class="search-item-info">
+          <div class="search-item-name">${r.name}</div>
+          <div class="search-item-meta">Logged ${r.count} time${r.count>1?'s':''}</div>
+        </div>
+        <div class="search-item-cal">${r.cal} cal</div>
+      </div>`
+    ).join('');
+    html += '</div>';
+    html += '<div class="search-loading" id="api-search-status">Searching online...</div>';
+    el.innerHTML = html;
+  },
+
+  async doAPISearch(query) {
+    const el = document.getElementById('search-results');
+    const statusEl = document.getElementById('api-search-status');
+
+    // Check cache first
+    const cacheKey = query.toLowerCase().trim();
+    if(this._searchCache[cacheKey]) {
+      this.renderAPIResults(this._searchCache[cacheKey], el);
+      return;
+    }
+
+    if(!statusEl) {
+      // No local results were shown, show loading
+      if(!el.innerHTML.includes('Your Foods')) {
+        el.innerHTML = '<div class="search-loading">Searching...</div>';
+      }
+    }
+
     try {
-      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=true&page_size=8&fields=product_name,nutriments,brands,image_small_url,quantity`;
+      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=true&page_size=5&fields=product_name,nutriments,brands,quantity`;
       const resp = await fetch(url);
       const data = await resp.json();
       const products = (data.products || []).filter(p => p.product_name && p.nutriments);
-      if(!products.length) {
-        el.innerHTML = '<div class="muted small" style="padding:8px">No results found. Try a different search or add manually.</div>';
-        return;
+
+      // Cache the results
+      this._searchCache[cacheKey] = products;
+
+      this.renderAPIResults(products, el);
+    } catch(e) {
+      const s = document.getElementById('api-search-status');
+      if(s) s.textContent = 'Online search failed.';
+      else if(!el.innerHTML.includes('Your Foods')) {
+        el.innerHTML = '<div class="muted small" style="padding:8px">Search failed. Check your connection.</div>';
       }
-      el.innerHTML = '<div class="search-results">' + products.map((p, i) => {
+    }
+  },
+
+  renderAPIResults(products, el) {
+    // Keep local results if they exist
+    const existing = el.innerHTML;
+    const hasLocal = existing.includes('Your Foods');
+
+    let html = hasLocal ? existing.replace(/<div class="search-loading"[^>]*>.*?<\/div>$/s, '') : '';
+
+    if(products.length) {
+      html += '<div class="search-results">';
+      html += '<div style="font-size:12px;color:#64748b;padding:6px 10px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Online Results</div>';
+      html += products.map((p, i) => {
         const cal = Math.round(p.nutriments['energy-kcal_100g'] || p.nutriments['energy-kcal'] || 0);
         const name = p.product_name;
         const brand = p.brands || '';
@@ -978,11 +1045,16 @@ const F = {
           </div>
           <div class="search-item-cal">${cal} cal${per100}</div>
         </div>`;
-      }).join('') + '</div>';
+      }).join('');
+      html += '</div>';
       this._lastResults = products;
-    } catch(e) {
-      el.innerHTML = '<div class="muted small" style="padding:8px">Search failed. Check your connection.</div>';
+    } else if(!hasLocal) {
+      html = '<div class="muted small" style="padding:8px">No results found. Try a different search or add manually.</div>';
+    } else {
+      // Remove loading indicator, local results are enough
     }
+
+    el.innerHTML = html;
   },
 
   addSearchResult(idx) {
@@ -993,7 +1065,6 @@ const F = {
     const name = p.product_name + (p.brands ? ` (${p.brands})` : '');
     const qty = p.quantity || '';
 
-    // Try to extract serving size from quantity string (e.g. "250ml", "300g")
     let defaultServing = 100;
     const qtyMatch = qty.match(/(\d+)\s*(ml|g|cl|l)\b/i);
     if(qtyMatch) {
@@ -1005,7 +1076,6 @@ const F = {
     }
 
     if(calPer100 > 0) {
-      // Show portion modal
       this._pendingFood = {name, calPer100, qty};
       const estCal = Math.round(calPer100 * defaultServing / 100);
       showModal(`
@@ -1031,7 +1101,6 @@ const F = {
         <button class="btn btn-primary btn-block" onclick="F.confirmPortion()">Add</button>
       `);
     } else if(calTotal > 0) {
-      // No per-100g data, just total — add directly
       this.addFood(name, calTotal);
       this.clearSearch();
     }
@@ -1162,20 +1231,21 @@ const F = {
       recents.push({name, cal, count:1, lastUsed: Date.now()});
     }
     recents.sort((a,b) => b.count - a.count || b.lastUsed - a.lastUsed);
-    S.set('foodRecents', recents.slice(0, 20));
+    S.set('foodRecents', recents.slice(0, 40));
   },
   renderRecents() {
-    const recents = this.getRecents().slice(0, 10);
-    const el = document.getElementById('recents-row');
+    const recents = this.getRecents().slice(0, 8);
+    const el = document.getElementById('recents-grid');
     if(!recents.length) {
-      el.innerHTML = '<span class="muted small">Foods you log will appear here for quick access</span>';
+      el.innerHTML = '<span class="muted small">Foods you log will appear here for one-tap adding</span>';
       return;
     }
-    el.innerHTML = recents.map(r =>
+    el.innerHTML = '<div class="recents-grid">' + recents.map(r =>
       `<button class="recent-chip" onclick="F.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal})">
-        ${r.name.length > 20 ? r.name.slice(0,18)+'...' : r.name} <span class="rc-cal">${r.cal}</span>
+        <span class="rc-name">${r.name.length > 22 ? r.name.slice(0,20)+'...' : r.name}</span>
+        <span class="rc-cal">${r.cal} cal</span>
       </button>`
-    ).join('');
+    ).join('') + '</div>';
   },
 
   // ── Core food methods ──
