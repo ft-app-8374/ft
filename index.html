@@ -6,7 +6,7 @@
   <title>FitTrack</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0f172a">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://world.openfoodfacts.org; connect-src 'self' https://world.openfoodfacts.org; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; media-src 'self' blob:">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="FitTrack">
@@ -138,6 +138,37 @@ textarea{resize:vertical;min-height:60px}
 /* ── Date Nav ── */
 .date-nav{display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:12px}
 .date-nav .date-str{font-size:16px;font-weight:600}
+
+/* ── Food Search ── */
+.food-search-wrap{position:relative}
+.food-search-wrap input{padding-right:40px}
+.food-search-clear{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;
+  color:#6b7280;font-size:18px;padding:4px}
+.search-results{max-height:280px;overflow-y:auto;margin-top:6px}
+.search-item{display:flex;justify-content:space-between;align-items:center;padding:10px 8px;
+  border-bottom:1px solid #1f2937;cursor:pointer;border-radius:8px}
+.search-item:active{background:#1e3a5f}
+.search-item-info{flex:1;min-width:0}
+.search-item-name{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.search-item-meta{font-size:12px;color:#6b7280}
+.search-item-cal{font-size:14px;font-weight:600;color:#3b82f6;flex-shrink:0;margin-left:8px}
+.search-loading{text-align:center;padding:16px;color:#6b7280}
+
+/* ── Recents ── */
+.recents-row{display:flex;gap:6px;overflow-x:auto;padding:4px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+.recents-row::-webkit-scrollbar{display:none}
+.recent-chip{flex-shrink:0;background:#1f2937;border:1px solid #374151;border-radius:16px;padding:6px 12px;
+  font-size:13px;white-space:nowrap;display:flex;align-items:center;gap:4px}
+.recent-chip:active{background:#1e3a5f;border-color:#3b82f6}
+.recent-chip .rc-cal{color:#6b7280;font-size:11px}
+
+/* ── Barcode Scanner ── */
+#scanner-container{position:relative;width:100%;max-width:400px;margin:0 auto}
+#scanner-video{width:100%;border-radius:12px;background:#000}
+#scanner-overlay{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:200px;height:200px;border:2px solid #3b82f6;border-radius:12px;
+  box-shadow:0 0 0 9999px rgba(0,0,0,.5)}
+.scanner-status{text-align:center;margin-top:8px;font-size:14px}
   </style>
 </head>
 <body>
@@ -171,11 +202,23 @@ textarea{resize:vertical;min-height:60px}
     </div>
   </div>
 
+  <div class="card" id="recents-card">
+    <h3>Recent Foods</h3>
+    <div class="recents-row" id="recents-row"><span class="muted small">No recent foods yet</span></div>
+  </div>
+
   <div class="card">
-    <h3>Quick Food Log</h3>
-    <div class="food-grid" id="food-grid"></div>
+    <h3>Add Food</h3>
+    <div class="food-search-wrap">
+      <input id="food-search" placeholder="Search food (e.g. banana, chicken rice)" autocomplete="off" autocorrect="off">
+      <button class="food-search-clear hidden" id="food-search-clear" onclick="T.clearSearch()">&times;</button>
+    </div>
+    <div id="search-results"></div>
     <div class="spacer"></div>
-    <button class="btn btn-secondary btn-block btn-sm" onclick="T.showCustomFood()">+ Custom Entry</button>
+    <div class="row">
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="T.showScanner()">&#128247; Scan Barcode</button>
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="T.showCustomFood()">+ Custom Entry</button>
+    </div>
   </div>
 
   <div class="card" id="food-log-card">
@@ -555,23 +598,8 @@ const T = {
       ).join('');
     }
 
-    // Food grid
-    const presets = [
-      {name:'Eggs & Toast', emoji:'🍳', cal:400},
-      {name:'Protein Shake', emoji:'🥤', cal:250},
-      {name:'Chicken & Rice', emoji:'🍗', cal:650},
-      {name:'Steak & Veg', emoji:'🥩', cal:700},
-      {name:'Pasta', emoji:'🍝', cal:550},
-      {name:'Salad', emoji:'🥗', cal:300},
-      {name:'Snack', emoji:'🍪', cal:200},
-      {name:'Coffee', emoji:'☕', cal:10},
-      {name:'Sandwich', emoji:'🥪', cal:450}
-    ];
-    document.getElementById('food-grid').innerHTML = presets.map(p =>
-      `<button class="food-btn" onclick="T.addFood('${p.name}',${p.cal})">
-        <span class="food-emoji">${p.emoji}</span>${p.name}<br><span class="food-cal">${p.cal} cal</span>
-      </button>`
-    ).join('');
+    // Recents
+    this.renderRecents();
 
     // Food log
     const logList = document.getElementById('food-log-list');
@@ -610,11 +638,182 @@ const T = {
     this.render();
   },
 
+  // ── Food search (OpenFoodFacts) ──
+  searchTimeout: null,
+  initSearch() {
+    const input = document.getElementById('food-search');
+    if(!input) return;
+    input.oninput = () => {
+      const q = input.value.trim();
+      document.getElementById('food-search-clear').classList.toggle('hidden', !q);
+      clearTimeout(this.searchTimeout);
+      if(q.length < 2) { document.getElementById('search-results').innerHTML = ''; return; }
+      this.searchTimeout = setTimeout(() => this.doSearch(q), 400);
+    };
+  },
+  clearSearch() {
+    document.getElementById('food-search').value = '';
+    document.getElementById('food-search-clear').classList.add('hidden');
+    document.getElementById('search-results').innerHTML = '';
+  },
+  async doSearch(query) {
+    const el = document.getElementById('search-results');
+    el.innerHTML = '<div class="search-loading">Searching...</div>';
+    try {
+      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=true&page_size=8&fields=product_name,nutriments,brands,image_small_url,quantity`;
+      const resp = await fetch(url);
+      const data = await resp.json();
+      const products = (data.products || []).filter(p => p.product_name && p.nutriments);
+      if(!products.length) {
+        el.innerHTML = '<div class="muted small" style="padding:8px">No results found. Try a different search or add manually.</div>';
+        return;
+      }
+      el.innerHTML = '<div class="search-results">' + products.map((p, i) => {
+        const cal = Math.round(p.nutriments['energy-kcal_100g'] || p.nutriments['energy-kcal'] || 0);
+        const name = p.product_name;
+        const brand = p.brands || '';
+        const qty = p.quantity || '';
+        const per100 = p.nutriments['energy-kcal_100g'] ? ' /100g' : '';
+        return `<div class="search-item" onclick="T.addSearchResult(${i})">
+          <div class="search-item-info">
+            <div class="search-item-name">${name}</div>
+            <div class="search-item-meta">${brand}${qty ? ' · '+qty : ''}</div>
+          </div>
+          <div class="search-item-cal">${cal} cal${per100}</div>
+        </div>`;
+      }).join('') + '</div>';
+      this._lastResults = products;
+    } catch(e) {
+      el.innerHTML = '<div class="muted small" style="padding:8px">Search failed. Check your connection.</div>';
+    }
+  },
+  _lastResults: [],
+  addSearchResult(idx) {
+    const p = this._lastResults[idx];
+    if(!p) return;
+    const cal = Math.round(p.nutriments['energy-kcal_100g'] || p.nutriments['energy-kcal'] || 0);
+    const name = p.product_name + (p.brands ? ` (${p.brands})` : '');
+    this.addFood(name, cal);
+    this.clearSearch();
+  },
+
+  // ── Barcode scanner ──
+  showScanner() {
+    const hasBarcodeDetector = 'BarcodeDetector' in window;
+    showModal(`
+      <h3>Scan Barcode</h3>
+      <div id="scanner-container">
+        <video id="scanner-video" autoplay playsinline muted></video>
+        <div id="scanner-overlay"></div>
+      </div>
+      <div class="scanner-status" id="scanner-status">Starting camera...</div>
+      ${!hasBarcodeDetector ? '<div class="muted small" style="margin-top:8px;text-align:center">Camera scanning not supported on this device.<br>Enter barcode manually below.</div>' : ''}
+      <div class="spacer"></div>
+      <div class="row">
+        <input id="manual-barcode" inputmode="numeric" placeholder="Or type barcode number" style="flex:1">
+        <button class="btn btn-primary btn-sm" onclick="T.lookupBarcode(document.getElementById('manual-barcode').value)">Look up</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn btn-secondary btn-block btn-sm" onclick="T.stopScanner();closeModalForce()">Cancel</button>
+    `);
+    if(hasBarcodeDetector) this.startScanner();
+  },
+  _scannerStream: null,
+  _scannerInterval: null,
+  async startScanner() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:640},height:{ideal:480}}});
+      this._scannerStream = stream;
+      const video = document.getElementById('scanner-video');
+      if(!video) { stream.getTracks().forEach(t=>t.stop()); return; }
+      video.srcObject = stream;
+      const detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+      document.getElementById('scanner-status').textContent = 'Point at a barcode...';
+      this._scannerInterval = setInterval(async () => {
+        if(video.readyState < 2) return;
+        try {
+          const barcodes = await detector.detect(video);
+          if(barcodes.length > 0) {
+            const code = barcodes[0].rawValue;
+            document.getElementById('scanner-status').textContent = `Found: ${code}`;
+            this.stopScanner();
+            this.lookupBarcode(code);
+          }
+        } catch(e) {}
+      }, 300);
+    } catch(e) {
+      document.getElementById('scanner-status').textContent = 'Camera access denied. Enter barcode manually.';
+    }
+  },
+  stopScanner() {
+    clearInterval(this._scannerInterval);
+    if(this._scannerStream) {
+      this._scannerStream.getTracks().forEach(t => t.stop());
+      this._scannerStream = null;
+    }
+  },
+  async lookupBarcode(code) {
+    code = (code||'').trim();
+    if(!code) return;
+    const statusEl = document.getElementById('scanner-status');
+    if(statusEl) statusEl.textContent = 'Looking up product...';
+    try {
+      const resp = await fetch(`https://world.openfoodfacts.org/api/v0/product/${encodeURIComponent(code)}.json`);
+      const data = await resp.json();
+      if(data.status === 1 && data.product) {
+        const p = data.product;
+        const cal = Math.round(p.nutriments?.['energy-kcal_100g'] || p.nutriments?.['energy-kcal'] || 0);
+        const name = p.product_name + (p.brands ? ` (${p.brands})` : '');
+        this.stopScanner();
+        closeModalForce();
+        this.addFood(name, cal);
+      } else {
+        if(statusEl) statusEl.textContent = 'Product not found in database. Try searching by name instead.';
+      }
+    } catch(e) {
+      if(statusEl) statusEl.textContent = 'Lookup failed. Check your connection.';
+    }
+  },
+
+  // ── Recents / Frequent foods ──
+  getRecents() {
+    return S.get('foodRecents', []);
+  },
+  trackRecent(name, cal) {
+    const recents = this.getRecents();
+    const existing = recents.find(r => r.name === name);
+    if(existing) {
+      existing.count++;
+      existing.cal = cal;
+      existing.lastUsed = Date.now();
+    } else {
+      recents.push({name, cal, count:1, lastUsed: Date.now()});
+    }
+    // Keep top 20 by frequency, break ties by recency
+    recents.sort((a,b) => b.count - a.count || b.lastUsed - a.lastUsed);
+    S.set('foodRecents', recents.slice(0, 20));
+  },
+  renderRecents() {
+    const recents = this.getRecents().slice(0, 10);
+    const el = document.getElementById('recents-row');
+    if(!recents.length) {
+      el.innerHTML = '<span class="muted small">Foods you log will appear here for quick access</span>';
+      return;
+    }
+    el.innerHTML = recents.map(r =>
+      `<button class="recent-chip" onclick="T.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal})">
+        ${r.name.length > 20 ? r.name.slice(0,18)+'...' : r.name} <span class="rc-cal">${r.cal}</span>
+      </button>`
+    ).join('');
+  },
+
+  // ── Core food methods ──
   addFood(name, cal) {
     const entry = this.getDaily(this.viewDate);
     const now = new Date();
     entry.foods.push({name, cal, time: now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')});
     this.saveDaily(entry);
+    this.trackRecent(name, cal);
     this.render();
   },
 
@@ -1403,6 +1602,7 @@ function drawMultiLineChart(canvas, series, opts={}) {
    ══════════════════════════════════════════ */
 initExercises();
 T.render();
+T.initSearch();
 
 if('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
