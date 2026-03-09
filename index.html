@@ -334,7 +334,10 @@ textarea{resize:vertical;min-height:80px}
     <p style="font-size:15px;line-height:1.6;margin-bottom:12px">
       Sync your Health data automatically using an iOS Shortcut. One tap syncs today's steps, weight, heart rate, sleep, and calories.
     </p>
-    <button class="btn btn-primary btn-block" onclick="I.showShortcutGuide()">Set Up Shortcut</button>
+    <div class="row">
+      <button class="btn btn-primary" style="flex:1" onclick="I.showShortcutGuide()">Set Up Shortcut</button>
+      <button class="btn btn-secondary" style="flex:1" onclick="I.pasteFromClipboard()">Paste from Health</button>
+    </div>
     <div class="spacer"></div>
     <div id="last-sync" class="muted" style="text-align:center"></div>
   </div>
@@ -1154,11 +1157,34 @@ const I = {
       const todaySleep = (h.sleep||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0);
       const todayCal = (h.activeCal||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0);
 
+      const val = (field) => {
+        const arr = h[field] || [];
+        const todayVals = arr.filter(r => r.date === today);
+        return todayVals.length ? todayVals.reduce((a,r) => a + r.value, 0) : null;
+      };
+      const last = (field) => {
+        const arr = h[field] || [];
+        return arr.length ? arr[arr.length-1].value : null;
+      };
+
+      const row = (label, value, unit='', color='') =>
+        `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1e293b">
+          <span style="font-size:15px">${label}</span>
+          <b style="font-size:15px;${color ? 'color:'+color : ''}">${value}${unit ? ' <span style="font-weight:400;color:#64748b;font-size:13px">'+unit+'</span>' : ''}</b>
+        </div>`;
+
       const items = [];
-      if(todaySteps) items.push(`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b"><span>Steps</span><b>${todaySteps.toLocaleString()}</b></div>`);
-      if(avgHR) items.push(`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b"><span>Heart Rate (avg)</span><b>${avgHR} bpm</b></div>`);
-      if(todaySleep) items.push(`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b"><span>Sleep</span><b>${todaySleep.toFixed(1)} hrs</b></div>`);
-      if(todayCal) items.push(`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1e293b"><span>Active Calories</span><b>${todayCal}</b></div>`);
+      const steps = val('steps'); if(steps) items.push(row('Steps', steps.toLocaleString()));
+      const aCal = val('activeCal'); if(aCal) items.push(row('Active Calories', Math.round(aCal), 'kcal'));
+      const rCal = val('restingEnergy'); if(rCal) items.push(row('Resting Energy', Math.round(rCal), 'kcal'));
+      const exMins = val('exerciseMins'); if(exMins) items.push(row('Exercise', Math.round(exMins), 'min', '#10b981'));
+      const dist = val('distance'); if(dist) items.push(row('Distance', dist.toFixed(1), 'km'));
+      const standH = val('standHours'); if(standH) items.push(row('Stand Hours', Math.round(standH), 'hrs'));
+      const rHR = last('restingHR'); if(rHR) items.push(row('Resting HR', Math.round(rHR), 'bpm', rHR < 60 ? '#10b981' : rHR > 80 ? '#ef4444' : ''));
+      const hrv = last('hrv'); if(hrv) items.push(row('HRV', Math.round(hrv), 'ms', hrv > 40 ? '#10b981' : hrv < 20 ? '#ef4444' : '#f59e0b'));
+      const vo2 = last('vo2max'); if(vo2) items.push(row('VO2 Max', (Math.round(vo2*10)/10).toString(), 'ml/kg/min'));
+      const slp = val('sleep'); if(slp) items.push(row('Sleep', (Math.round(slp*10)/10).toString(), 'hrs', slp >= 7 ? '#10b981' : slp < 6 ? '#ef4444' : '#f59e0b'));
+      const wt = last('weight'); if(wt) items.push(row('Weight', (Math.round(wt*10)/10).toString(), 'kg'));
 
       todayEl.innerHTML = items.length ? items.join('') : '<div class="muted">No health data for today. Sync from Apple Health or enter manually.</div>';
     }
@@ -1194,115 +1220,140 @@ const I = {
 
   processImport(data) {
     const today = data.date || S.today();
-    const health = S.get('healthImport', {steps:[], heartRate:[], sleep:[], activeCal:[], weight:[], syncLog:[], lastImport:null});
+    const health = S.get('healthImport', {steps:[], heartRate:[], sleep:[], activeCal:[], weight:[], restingHR:[], hrv:[], vo2max:[], exerciseMins:[], distance:[], standHours:[], restingEnergy:[], syncLog:[], lastImport:null});
 
-    // Remove existing entries for this date to avoid duplicates
-    const fields = ['steps','heartRate','sleep','activeCal','weight'];
-    fields.forEach(f => {
+    // All supported fields
+    const allFields = ['steps','heartRate','sleep','activeCal','weight','restingHR','hrv','vo2max','exerciseMins','distance','standHours','restingEnergy'];
+    allFields.forEach(f => {
       if(!health[f]) health[f] = [];
       health[f] = health[f].filter(r => r.date !== today);
     });
 
     // Add new data
-    if(data.steps) health.steps.push({date: today, value: Math.round(data.steps)});
-    if(data.heartRate) health.heartRate.push({date: today, value: Math.round(data.heartRate)});
-    if(data.sleep) health.sleep.push({date: today, value: Math.round(data.sleep*10)/10});
-    if(data.activeCal) health.activeCal.push({date: today, value: Math.round(data.activeCal)});
+    const fieldMap = {steps:'steps', heartRate:'heartRate', sleep:'sleep', activeCal:'activeCal',
+      weight:'weight', restingHR:'restingHR', hrv:'hrv', vo2max:'vo2max',
+      exerciseMins:'exerciseMins', distance:'distance', standHours:'standHours', restingEnergy:'restingEnergy'};
+    for(const [key, field] of Object.entries(fieldMap)) {
+      if(data[key] !== undefined && data[key] !== null && data[key] !== '') {
+        const val = parseFloat(data[key]);
+        if(!isNaN(val) && val > 0) health[field].push({date: today, value: field === 'distance' ? Math.round(val*100)/100 : Math.round(val*10)/10});
+      }
+    }
+
+    // Weight also goes to measurements
     if(data.weight) {
-      health.weight.push({date: today, value: Math.round(data.weight*10)/10});
-      // Also merge into measurements
-      const measurements = S.get('measurements', []);
-      const idx = measurements.findIndex(m => m.date === today);
-      if(idx >= 0) measurements[idx].weight = Math.round(data.weight*10)/10;
-      else measurements.push({date: today, weight: Math.round(data.weight*10)/10});
-      measurements.sort((a,b) => a.date.localeCompare(b.date));
-      S.set('measurements', measurements);
+      const w = Math.round(parseFloat(data.weight)*10)/10;
+      if(w > 0) {
+        const measurements = S.get('measurements', []);
+        const idx = measurements.findIndex(m => m.date === today);
+        if(idx >= 0) measurements[idx].weight = w;
+        else measurements.push({date: today, weight: w});
+        measurements.sort((a,b) => a.date.localeCompare(b.date));
+        S.set('measurements', measurements);
+      }
     }
 
     // Sync log
     if(!health.syncLog) health.syncLog = [];
     const parts = [];
     if(data.steps) parts.push(`${Math.round(data.steps).toLocaleString()} steps`);
+    if(data.activeCal) parts.push(`${Math.round(data.activeCal)} cal`);
     if(data.sleep) parts.push(`${(Math.round(data.sleep*10)/10)}h sleep`);
-    if(data.heartRate) parts.push(`${Math.round(data.heartRate)} bpm`);
-    if(data.activeCal) parts.push(`${Math.round(data.activeCal)} active cal`);
-    if(data.weight) parts.push(`${(Math.round(data.weight*10)/10)} kg`);
-    health.syncLog.push({date: today, summary: parts.join(' | ') || 'No data'});
+    if(data.restingHR) parts.push(`${Math.round(data.restingHR)} rHR`);
+    if(data.hrv) parts.push(`${Math.round(data.hrv)}ms HRV`);
+    if(data.weight) parts.push(`${(Math.round(data.weight*10)/10)}kg`);
+    health.syncLog.push({date: today, summary: parts.join(' | ') || 'Synced'});
     if(health.syncLog.length > 30) health.syncLog = health.syncLog.slice(-30);
 
     health.lastImport = new Date().toISOString();
     S.set('healthImport', health);
   },
 
+  // Clipboard paste import
+  async pasteFromClipboard() {
+    try {
+      const text = await navigator.clipboard.readText();
+      const data = JSON.parse(text);
+      this.processImport(data);
+      this.render();
+      showModal(`<h3>Synced!</h3><p style="font-size:15px">Health data imported successfully.</p>
+        <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
+    } catch(e) {
+      showModal(`<h3>Paste Failed</h3><p style="font-size:15px">Couldn't read health data from clipboard. Make sure you ran the Shortcut first.</p>
+        <div class="spacer"></div><button class="btn btn-secondary btn-block" onclick="closeModalForce()">OK</button>`);
+    }
+  },
+
   showShortcutGuide() {
     const appURL = window.location.origin + window.location.pathname;
     showModal(`
-      <h3>Set Up Health Sync Shortcut</h3>
-      <p style="font-size:15px;line-height:1.7;margin-bottom:16px">
-        Create an iOS Shortcut that reads your Apple Health data and syncs it to FitTrack with one tap.
-      </p>
-      <div style="background:#0f172a;border-radius:12px;padding:16px;margin-bottom:16px">
-        <p style="font-size:14px;font-weight:700;color:#3b82f6;margin-bottom:10px">Steps to create:</p>
-        <ol style="padding-left:20px;font-size:14px;line-height:2">
-          <li>Open the <b>Shortcuts</b> app</li>
-          <li>Tap <b>+</b> to create a new shortcut</li>
-          <li>Add these actions in order:</li>
-        </ol>
-        <div style="background:#1e293b;border-radius:10px;padding:14px;margin:10px 0;font-size:13px;line-height:1.8">
-          <div style="color:#64748b;margin-bottom:4px">Action 1:</div>
-          <b>Find Health Samples</b> where Type is Steps, Start Date is today<br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 2:</div>
-          <b>Find Health Samples</b> where Type is Weight, limit 1, sorted by most recent<br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 3:</div>
-          <b>Find Health Samples</b> where Type is Heart Rate, Start Date is today<br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 4:</div>
-          <b>Find Health Samples</b> where Type is Sleep Analysis, Start Date is today<br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 5:</div>
-          <b>Find Health Samples</b> where Type is Active Energy, Start Date is today<br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 6:</div>
-          <b>Dictionary</b> — create with keys:<br>
-          &nbsp;&nbsp;steps: <i>Steps total</i><br>
-          &nbsp;&nbsp;weight: <i>Weight value</i><br>
-          &nbsp;&nbsp;heartRate: <i>Heart Rate avg</i><br>
-          &nbsp;&nbsp;sleep: <i>Sleep hours</i><br>
-          &nbsp;&nbsp;activeCal: <i>Active Energy total</i><br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 7:</div>
-          <b>Get text from</b> Dictionary<br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 8:</div>
-          <b>Base64 Encode</b> the text<br>
-          <div style="color:#64748b;margin:8px 0 4px">Action 9:</div>
-          <b>Open URL:</b><br>
-          <span style="word-break:break-all;color:#60a5fa">${appURL}?import=</span>[Base64 Encoded]
+      <h3>Health Sync Shortcuts</h3>
+
+      <div style="background:#0f172a;border-radius:14px;padding:18px;margin-bottom:14px">
+        <p style="font-size:15px;font-weight:700;color:#3b82f6;margin-bottom:12px">Daily Health Sync</p>
+        <p style="font-size:14px;line-height:1.6;margin-bottom:14px">Syncs steps, calories, sleep, heart rate, HRV, VO2 Max, and more from your Apple Watch.</p>
+
+        <p style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px">Open Shortcuts app &rarr; tap + &rarr; add these actions:</p>
+
+        <div style="background:#1e293b;border-radius:10px;padding:14px;font-size:14px;line-height:2">
+          <div style="color:#3b82f6;font-weight:700">Step 1: Get the data</div>
+          Add a <b>Text</b> action and type exactly:<br>
+          <div style="background:#0f172a;border-radius:8px;padding:10px;margin:6px 0;font-family:monospace;font-size:12px;word-break:break-all;color:#60a5fa;line-height:1.4">
+{"steps":"<span style="color:#f59e0b">ShortcutInput</span>","activeCal":"<span style="color:#f59e0b">ShortcutInput</span>","restingEnergy":"<span style="color:#f59e0b">ShortcutInput</span>","exerciseMins":"<span style="color:#f59e0b">ShortcutInput</span>","distance":"<span style="color:#f59e0b">ShortcutInput</span>","restingHR":"<span style="color:#f59e0b">ShortcutInput</span>","hrv":"<span style="color:#f59e0b">ShortcutInput</span>","vo2max":"<span style="color:#f59e0b">ShortcutInput</span>","sleep":"<span style="color:#f59e0b">ShortcutInput</span>","weight":"<span style="color:#f59e0b">ShortcutInput</span>","standHours":"<span style="color:#f59e0b">ShortcutInput</span>"}
+          </div>
+          <p style="font-size:12px;color:#64748b;margin:4px 0 8px">Replace each <span style="color:#f59e0b">ShortcutInput</span> by tapping it and selecting the magic variable from a Health Sample query above it.</p>
+
+          <div style="color:#64748b;font-size:12px;margin-top:4px">Actually, the easier way:</div>
         </div>
+
+        <div style="background:#1e293b;border-radius:10px;padding:14px;margin-top:8px;font-size:14px;line-height:1.8">
+          <div style="color:#10b981;font-weight:700;margin-bottom:6px">Easier method (recommended):</div>
+          <ol style="padding-left:20px;font-size:14px;line-height:2.2">
+            <li>Search for <b>"Find Health Samples"</b></li>
+            <li>Set Type = <b>Step Count</b>, Period = <b>Today</b></li>
+            <li>Add another <b>"Find Health Samples"</b></li>
+            <li>Set Type = <b>Active Energy</b>, Period = <b>Today</b></li>
+            <li>Repeat for: <b>Resting Energy</b>, <b>Exercise Minutes</b>, <b>Walking+Running Distance</b>, <b>Resting Heart Rate</b> (1 sample), <b>Heart Rate Variability</b> (1 sample), <b>VO2 Max</b> (1 sample), <b>Sleep Analysis</b> (Today), <b>Stand Hours</b> (Today), <b>Weight</b> (1 sample)</li>
+            <li>Add <b>"Dictionary"</b> action with these keys:<br>
+              <span style="color:#60a5fa;font-size:13px">steps, activeCal, restingEnergy, exerciseMins, distance, restingHR, hrv, vo2max, sleep, standHours, weight</span><br>
+              Set each value to the matching Health Sample variable above</li>
+            <li>Add <b>"Base64 Encode"</b> (input: Dictionary)</li>
+            <li>Add <b>"Open URL"</b>:<br>
+              <span style="word-break:break-all;color:#60a5fa;font-size:13px">${appURL}?import=</span> then tap and insert the Base64 result</li>
+          </ol>
+        </div>
+
         <p style="font-size:13px;color:#64748b;margin-top:10px">
-          <b>Optional:</b> Go to Automation tab in Shortcuts &rarr; Personal Automation &rarr; Time of Day &rarr; set to run each morning. FitTrack will open and sync automatically.
+          <b>Automate it:</b> Shortcuts &rarr; Automation tab &rarr; + &rarr; Time of Day &rarr; choose morning time &rarr; run this shortcut. Your data syncs every day automatically.
         </p>
       </div>
-      <button class="btn btn-secondary btn-block" onclick="I.copyTestURL()">Copy Test URL (sample data)</button>
+
+      <div style="background:#0f172a;border-radius:14px;padding:18px;margin-bottom:14px">
+        <p style="font-size:15px;font-weight:700;color:#10b981;margin-bottom:8px">Quick Alternative: Clipboard Paste</p>
+        <p style="font-size:14px;line-height:1.6">Build the same shortcut but use <b>"Copy to Clipboard"</b> instead of "Open URL" at the end. Then tap the paste button below after running it.</p>
+      </div>
+
+      <button class="btn btn-primary btn-block" onclick="I.pasteFromClipboard();closeModalForce()">Paste Health Data from Clipboard</button>
+      <div class="spacer"></div>
+      <button class="btn btn-secondary btn-block" onclick="I.copyTestURL()">Test with Sample Data</button>
       <div class="spacer"></div>
       <button class="btn btn-secondary btn-block" onclick="closeModalForce()">Close</button>
     `);
   },
 
   copyTestURL() {
-    const testData = {steps:8432, weight:82.5, heartRate:68, sleep:7.2, activeCal:340};
+    const testData = {steps:8432, weight:82.5, restingHR:58, hrv:42, vo2max:38.5, sleep:7.2, activeCal:340, restingEnergy:1850, exerciseMins:35, distance:5.8, standHours:10};
     const encoded = btoa(encodeURIComponent(JSON.stringify(testData)));
     const url = window.location.origin + window.location.pathname + '?import=' + encoded;
     navigator.clipboard.writeText(url).then(() => {
-      showModal(`
-        <h3>Test URL Copied!</h3>
-        <p style="font-size:15px;line-height:1.6">Paste this URL in Safari to test the import. It contains sample data (8,432 steps, 82.5kg, 68 bpm, 7.2h sleep, 340 active cal).</p>
-        <div class="spacer"></div>
-        <button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>
-      `);
+      showModal(`<h3>Test URL Copied!</h3>
+        <p style="font-size:15px;line-height:1.6">Paste this URL in Safari to test the import with sample Apple Watch data.</p>
+        <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
     }).catch(() => {
-      showModal(`
-        <h3>Test URL</h3>
-        <p style="font-size:14px;margin-bottom:10px">Copy this URL and paste in Safari:</p>
+      showModal(`<h3>Test URL</h3>
+        <p style="font-size:14px;margin-bottom:10px">Copy this URL and open in Safari:</p>
         <textarea style="font-size:12px;height:100px" readonly onclick="this.select()">${url}</textarea>
-        <div class="spacer"></div>
-        <button class="btn btn-primary btn-block" onclick="closeModalForce()">Close</button>
-      `);
+        <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">Close</button>`);
     });
   },
 
