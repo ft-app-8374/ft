@@ -513,7 +513,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 22;
+const APP_VERSION = 23;
 
 /* ── Storage helpers ── */
 const S = {
@@ -1259,6 +1259,7 @@ const F = {
     T.saveDaily(entry);
     this.trackRecent(name, cal);
     this.render();
+    T.render();
     Coach.refreshIfVisible();
   },
 
@@ -1267,6 +1268,7 @@ const F = {
     entry.foods.splice(idx, 1);
     T.saveDaily(entry);
     this.render();
+    T.render();
     Coach.refreshIfVisible();
   },
 
@@ -1655,6 +1657,7 @@ const W = {
     }
 
     this.render();
+    T.render();
     Coach.refreshIfVisible();
   },
 
@@ -1910,6 +1913,7 @@ const I = {
       const data = JSON.parse(text);
       this.processImport(data);
       this.render();
+      T.render();
       Coach.refreshIfVisible();
       showModal(`<h3>Synced!</h3><p style="font-size:15px">Health data imported successfully.</p>
         <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
@@ -1932,6 +1936,8 @@ const I = {
     if(Object.keys(data).length === 0) return;
     this.processImport(data);
     this.render();
+    T.render();
+    Coach.refreshIfVisible();
     document.getElementById('manual-steps').value = '';
     document.getElementById('manual-hr').value = '';
     document.getElementById('manual-sleep').value = '';
