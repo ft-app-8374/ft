@@ -725,53 +725,68 @@ const T = {
       return dayVals.length ? dayVals[dayVals.length-1].value : null;
     };
 
-    const metrics = [];
-    const steps = val('steps');
-    if(steps !== null) metrics.push({label:'Steps', value: Math.round(steps).toLocaleString(), color:'#3b82f6'});
+    // Gather all values
     const aCal = val('activeCal');
-    if(aCal !== null) metrics.push({label:'Active Cal', value: Math.round(aCal).toLocaleString(), unit:'kcal', color:'#f59e0b'});
     const rCal = val('restingEnergy');
-    if(rCal !== null) metrics.push({label:'Resting Cal', value: Math.round(rCal).toLocaleString(), unit:'kcal', color:'#8b5cf6'});
+    const entry = this.getDaily(date);
+    const foodCal = entry.foods.reduce((a,f) => a+f.cal, 0);
+    let netCal = null;
+    if(foodCal > 0 && aCal !== null && aCal > 0) {
+      netCal = Math.round(foodCal - aCal);
+      this.storeNetCalories(date, netCal, foodCal, Math.round(aCal));
+    }
     const exMins = val('exerciseMins');
-    if(exMins !== null) metrics.push({label:'Exercise', value: Math.round(exMins), unit:'min', color:'#10b981'});
+    const steps = val('steps');
     const dist = val('distance');
-    if(dist !== null) metrics.push({label:'Distance', value: dist.toFixed(1), unit:'km', color:'#06b6d4'});
     const standHrs = val('standHours');
     const standMin = val('standMins');
+    const rHR = last('restingHR');
+    const hrv = last('hrv');
+    const slp = val('sleep');
+    const wt = last('weight');
+
+    // Build rows in fixed order (each row = 2 tiles)
+    const metrics = [];
+
+    // Row 1: Active Cal | Resting Cal
+    if(aCal !== null) metrics.push({label:'Active Cal', value: Math.round(aCal).toLocaleString(), unit:'kcal', color:'#f59e0b'});
+    if(rCal !== null) metrics.push({label:'Resting Cal', value: Math.round(rCal).toLocaleString(), unit:'kcal', color:'#8b5cf6'});
+
+    // Row 2: Eaten | Net Cal
+    if(foodCal > 0) metrics.push({label:'Eaten', value: foodCal.toLocaleString(), unit:'kcal', color:'#fb923c'});
+    else if(aCal !== null || rCal !== null) metrics.push({label:'Eaten', value:'—', unit:'', color:'#475569'});
+    if(netCal !== null) {
+      const netColor = netCal > 0 ? '#f59e0b' : '#10b981';
+      metrics.push({label:'Net Cal', value: (netCal > 0 ? '+' : '') + netCal.toLocaleString(), unit: netCal > 0 ? 'over' : 'under', color: netColor});
+    } else if(aCal !== null || rCal !== null) {
+      metrics.push({label:'Net Cal', value:'—', unit:'', color:'#475569'});
+    }
+
+    // Row 3: Exercise | Steps
+    if(exMins !== null) metrics.push({label:'Exercise', value: Math.round(exMins), unit:'min', color:'#10b981'});
+    if(steps !== null) metrics.push({label:'Steps', value: Math.round(steps).toLocaleString(), color:'#3b82f6'});
+
+    // Row 4: Distance | Stand
+    if(dist !== null) metrics.push({label:'Distance', value: dist.toFixed(1), unit:'km', color:'#06b6d4'});
     if(standHrs !== null) metrics.push({label:'Stand', value: Math.round(standHrs), unit:'hrs', color:'#a855f7'});
     else if(standMin !== null) metrics.push({label:'Stand', value: Math.round(standMin), unit:'min', color:'#a855f7'});
-    const rHR = last('restingHR');
+
+    // Row 5: Resting HR | HRV
     if(rHR !== null) {
       const hrColor = rHR < 60 ? '#10b981' : rHR > 80 ? '#ef4444' : '#f59e0b';
       metrics.push({label:'Resting HR', value: Math.round(rHR), unit:'bpm', color: hrColor});
     }
-    const hrv = last('hrv');
     if(hrv !== null) {
       const hrvColor = hrv > 40 ? '#10b981' : hrv < 20 ? '#ef4444' : '#f59e0b';
       metrics.push({label:'HRV', value: Math.round(hrv), unit:'ms', color: hrvColor});
     }
-    const slp = val('sleep');
+
+    // Extra row: Sleep | Weight (if available)
     if(slp !== null) {
       const slpColor = slp >= 7 ? '#10b981' : slp < 6 ? '#ef4444' : '#f59e0b';
       metrics.push({label:'Sleep', value: (Math.round(slp*10)/10).toString(), unit:'hrs', color: slpColor});
     }
-    const wt = last('weight');
     if(wt !== null) metrics.push({label:'Weight', value: (Math.round(wt*10)/10).toString(), unit:'kg', color:'#64748b'});
-
-    // Calories consumed from food log
-    const entry = this.getDaily(date);
-    const foodCal = entry.foods.reduce((a,f) => a+f.cal, 0);
-    if(foodCal > 0) metrics.push({label:'Eaten', value: foodCal.toLocaleString(), unit:'kcal', color:'#fb923c'});
-
-    // Net Calories (eaten - active calories burned)
-    if(foodCal > 0 && aCal !== null && aCal > 0) {
-      const net = Math.round(foodCal - aCal);
-      const netColor = net > 0 ? '#f59e0b' : '#10b981';
-      metrics.push({label:'Net Cal', value: (net > 0 ? '+' : '') + net.toLocaleString(), unit: net > 0 ? 'over' : 'under', color: netColor});
-
-      // Store net calories for charting
-      this.storeNetCalories(date, net, foodCal, Math.round(aCal));
-    }
 
     if(!metrics.length) {
       grid.innerHTML = '<div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No data for this date. Sync health or log food.</div>';
