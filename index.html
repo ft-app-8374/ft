@@ -453,6 +453,7 @@ textarea{resize:vertical;min-height:80px}
     <button class="pill" data-chart="calories" onclick="C.switchChart('calories')">Calories</button>
     <button class="pill" data-chart="steps" onclick="C.switchChart('steps')">Steps</button>
     <button class="pill" data-chart="heart" onclick="C.switchChart('heart')">Heart</button>
+    <button class="pill" data-chart="netcal" onclick="C.switchChart('netcal')">Net Cal</button>
     <button class="pill" data-chart="wellness" onclick="C.switchChart('wellness')">Wellness</button>
   </div>
 
@@ -762,6 +763,18 @@ const T = {
     const foodCal = entry.foods.reduce((a,f) => a+f.cal, 0);
     if(foodCal > 0) metrics.push({label:'Eaten', value: foodCal.toLocaleString(), unit:'kcal', color:'#fb923c'});
 
+    // Net Calories (eaten - total burn)
+    const totalBurn = (aCal !== null ? aCal : 0) + (rCal !== null ? rCal : 0);
+    if(foodCal > 0 && totalBurn > 0) {
+      const net = Math.round(foodCal - totalBurn);
+      const netColor = net > 0 ? '#f59e0b' : net < -500 ? '#ef4444' : '#10b981';
+      const netLabel = net > 0 ? 'Surplus' : 'Deficit';
+      metrics.push({label:'Net Cal', value: (net > 0 ? '+' : '') + net.toLocaleString(), unit: netLabel, color: netColor});
+
+      // Store net calories for charting
+      this.storeNetCalories(date, net, foodCal, Math.round(totalBurn));
+    }
+
     if(!metrics.length) {
       grid.innerHTML = '<div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No data for this date. Sync health or log food.</div>';
       return;
@@ -858,6 +871,16 @@ const T = {
       <div class="insight-body">${recs.map(r => `<div style="margin:4px 0">• ${r}</div>`).join('')}</div></div>`;
 
     el.innerHTML = html;
+  },
+
+  storeNetCalories(date, net, eaten, burned) {
+    const history = S.get('netCalHistory', []);
+    const idx = history.findIndex(h => h.date === date);
+    const entry = {date, net, eaten, burned};
+    if(idx >= 0) history[idx] = entry; else history.push(entry);
+    history.sort((a,b) => a.date.localeCompare(b.date));
+    if(history.length > 180) history.splice(0, history.length - 180);
+    S.set('netCalHistory', history);
   },
 
   setRating(key, val) {
@@ -2115,6 +2138,7 @@ const C = {
     else if(this.chartType === 'calories') this.renderCalories(canvas);
     else if(this.chartType === 'steps') this.renderSteps(canvas);
     else if(this.chartType === 'heart') this.renderHeart(canvas);
+    else if(this.chartType === 'netcal') this.renderNetCal(canvas);
     else if(this.chartType === 'wellness') this.renderWellness(canvas);
   },
 
@@ -2183,6 +2207,76 @@ const C = {
       return;
     }
     drawMultiLineChart(canvas, series, {label:'bpm/ms'});
+  },
+
+  renderNetCal(canvas) {
+    const history = S.get('netCalHistory', []);
+    if(!history.length) { clearCanvas(canvas, 'No net calorie data yet. Log food + sync health.'); return; }
+    let data = history.map(h => ({x: h.date, y: h.net})).sort((a,b) => a.x.localeCompare(b.x));
+    data = this.filterByRange(data);
+    if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 days of data'); return; }
+
+    // Custom bar chart with zero line — green for deficit, amber for surplus
+    const {ctx, w, h} = setupCanvas(canvas);
+    const pad = {top:20, right:16, bottom:30, left:55};
+    const cw = w - pad.left - pad.right;
+    const ch = h - pad.top - pad.bottom;
+    const maxAbs = Math.max(Math.abs(Math.min(...data.map(d=>d.y))), Math.abs(Math.max(...data.map(d=>d.y))), 200);
+    const yMin = -maxAbs * 1.1;
+    const yMax = maxAbs * 1.1;
+    const yRange = yMax - yMin;
+
+    // Grid
+    ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
+    for(let i=0;i<=4;i++){
+      const y = pad.top + ch * (1 - i/4);
+      ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
+      ctx.fillStyle = '#6b7280'; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText(Math.round(yMin + yRange*i/4), pad.left-6, y+4);
+    }
+
+    // Zero line
+    const zeroY = pad.top + ch * (1 - (0 - yMin)/yRange);
+    ctx.strokeStyle = '#475569'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(pad.left, zeroY); ctx.lineTo(w-pad.right, zeroY); ctx.stroke();
+
+    // Bars
+    const barW = Math.max(4, (cw / data.length) * 0.6);
+    const gap = cw / data.length;
+    data.forEach((d,i) => {
+      const x = pad.left + gap * i + (gap - barW)/2;
+      const barTop = d.y >= 0 ? pad.top + ch * (1 - (d.y - yMin)/yRange) : zeroY;
+      const barBot = d.y >= 0 ? zeroY : pad.top + ch * (1 - (d.y - yMin)/yRange);
+      const barH = barBot - barTop;
+      ctx.fillStyle = d.y > 0 ? '#f59e0b' : '#10b981';
+      ctx.beginPath();
+      ctx.roundRect(x, barTop, barW, barH, [3,3,0,0]);
+      ctx.fill();
+    });
+
+    // X labels
+    ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+    const step = Math.max(1, Math.floor(data.length / 5));
+    data.forEach((d,i) => {
+      if(i % step === 0 || i === data.length-1) {
+        const x = pad.left + gap * i + gap/2;
+        ctx.fillText(d.x.slice(5), x, h - pad.bottom + 16);
+      }
+    });
+
+    canvas.onclick = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const cx = e.clientX - rect.left;
+      let closest = 0, minDist = Infinity;
+      data.forEach((d,i) => {
+        const x = pad.left + gap * i + gap/2;
+        if(Math.abs(x-cx) < minDist) { minDist = Math.abs(x-cx); closest = i; }
+      });
+      const d = data[closest];
+      const h2 = S.get('netCalHistory', []).find(h => h.date === d.x);
+      const detail = h2 ? `Eaten: ${h2.eaten} | Burned: ${h2.burned} | Net: ${d.y > 0 ? '+' : ''}${d.y}` : `${d.y}`;
+      document.getElementById('chart-tap-info').textContent = `${fmtDate(d.x)}: ${detail}`;
+    };
   },
 
   renderWellness(canvas) {
