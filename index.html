@@ -513,6 +513,8 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
+const APP_VERSION = 22;
+
 /* ── Storage helpers ── */
 const S = {
   get(k, def=null) { try { const v=localStorage.getItem('ft.'+k); return v?JSON.parse(v):def } catch{ return def } },
@@ -2817,15 +2819,20 @@ if(I.handleURLImport()) {
 F.initSearch();
 
 if('serviceWorker' in navigator) {
+  const lastVer = parseInt(localStorage.getItem('ft.swVersion') || '0');
+  if(lastVer < APP_VERSION) {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+    localStorage.setItem('ft.swVersion', String(APP_VERSION));
+  }
   navigator.serviceWorker.register('sw.js').then(reg => {
     reg.update();
     reg.addEventListener('updatefound', () => {
-      const newSW = reg.installing;
-      newSW.addEventListener('statechange', () => {
-        if(newSW.state === 'activated') window.location.reload();
+      const nw = reg.installing;
+      nw.addEventListener('statechange', () => {
+        if(nw.state === 'activated') window.location.reload();
       });
     });
-  }).catch(() => {});
+  });
 }
 
 if('Notification' in window && Notification.permission === 'default') {
