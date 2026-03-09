@@ -289,6 +289,11 @@ textarea{resize:vertical;min-height:80px}
 <div class="wrap">
   <h2 style="margin-bottom:12px">Workout</h2>
 
+  <!-- Watch Activity Summary -->
+  <div class="card" id="workout-watch-summary" style="display:none">
+    <div class="row" style="gap:12px" id="workout-watch-metrics"></div>
+  </div>
+
   <!-- Suggested Workout -->
   <div class="card" id="suggested-workout-card">
     <h3>Suggested Workout</h3>
@@ -340,11 +345,6 @@ textarea{resize:vertical;min-height:80px}
   <div class="card">
     <h3>Today's Workout</h3>
     <div id="workout-today-summary">No exercises logged yet</div>
-  </div>
-
-  <div class="card" id="watch-activity-card" style="display:none">
-    <h3>⌚ Watch Activity</h3>
-    <div id="watch-activity-list"></div>
   </div>
 
   <div class="card">
@@ -518,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 25;
+const APP_VERSION = 26;
 
 /* ── Storage helpers ── */
 const S = {
@@ -1686,50 +1686,40 @@ const W = {
       document.getElementById('workout-today-summary').innerHTML = html;
     }
 
-    // Watch activity (separate informational section)
-    const watchCard = document.getElementById('watch-activity-card');
-    if(watch.length) {
-      watchCard.style.display = '';
-      document.getElementById('watch-activity-list').innerHTML = watch.map(w => {
-        const e = w.exercises[0];
-        return `<div class="hist-item"><b>${e.name}</b><br><span class="small muted">${e.duration||0} min · ${e.cal||0} cal${e.startTime ? ' · '+e.startTime : ''}</span></div>`;
-      }).join('');
-    } else {
-      watchCard.style.display = 'none';
-    }
+    // Watch health metrics on workout tab
+    this.renderWatchSummary();
+  },
+
+  renderWatchSummary() {
+    const card = document.getElementById('workout-watch-summary');
+    const el = document.getElementById('workout-watch-metrics');
+    const health = S.get('healthImport', null);
+    if(!health) { card.style.display = 'none'; return; }
+
+    const today = S.today();
+    const aCal = (health.activeCal||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0);
+    const exMin = (health.exerciseMins||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0);
+
+    if(!aCal && !exMin) { card.style.display = 'none'; return; }
+
+    card.style.display = '';
+    let html = '';
+    if(exMin > 0) html += `<div class="health-metric" style="flex:1;text-align:center"><div class="hm-value" style="color:#10b981">${Math.round(exMin)} <span class="hm-unit">min</span></div><div class="hm-label">⌚ Exercise</div></div>`;
+    if(aCal > 0) html += `<div class="health-metric" style="flex:1;text-align:center"><div class="hm-value" style="color:#f59e0b">${Math.round(aCal).toLocaleString()} <span class="hm-unit">kcal</span></div><div class="hm-label">⌚ Active Cal</div></div>`;
+    el.innerHTML = html;
   },
 
   renderHistory() {
-    const workouts = S.get('workouts', []).filter(w => w.date !== S.today()).sort((a,b) => b.date.localeCompare(a.date)).slice(0,14);
+    const workouts = S.get('workouts', []).filter(w => w.date !== S.today() && w.source !== 'watch').sort((a,b) => b.date.localeCompare(a.date)).slice(0,7);
     if(!workouts.length) {
       document.getElementById('workout-history').innerHTML = '<span class="muted">No previous workouts</span>';
       return;
     }
-    // Group by date, preferring manual over watch
-    const byDate = {};
-    workouts.forEach(w => {
-      if(!byDate[w.date]) byDate[w.date] = {manual:[], watch:[]};
-      if(w.source === 'watch') byDate[w.date].watch.push(w);
-      else byDate[w.date].manual.push(w);
-    });
-    const dates = Object.keys(byDate).sort((a,b) => b.localeCompare(a)).slice(0,7);
-    document.getElementById('workout-history').innerHTML = dates.map(date => {
-      const g = byDate[date];
-      let html = '';
-      // Show manual entries first (primary)
-      g.manual.forEach(w => {
-        const exList = w.exercises.map(e => e.name).join(', ');
-        const totalSets = w.exercises.reduce((a,e) => a+e.sets.length, 0);
-        html += `<div class="hist-item"><span class="hist-date">${fmtDate(date)}</span>
-          <div class="hist-detail">${exList} <span class="muted">(${totalSets} sets)</span></div></div>`;
-      });
-      // Show watch entries (secondary, lighter)
-      g.watch.forEach(w => {
-        const e = w.exercises[0];
-        html += `<div class="hist-item" style="opacity:0.7"><span class="hist-date">${g.manual.length ? '' : fmtDate(date)}</span>
-          <div class="hist-detail">⌚ ${e.name} <span class="muted">${e.duration||0}min · ${e.cal||0} cal</span></div></div>`;
-      });
-      return html;
+    document.getElementById('workout-history').innerHTML = workouts.map(w => {
+      const exList = w.exercises.map(e => e.name).join(', ');
+      const totalSets = w.exercises.reduce((a,e) => a+e.sets.length, 0);
+      return `<div class="hist-item"><span class="hist-date">${fmtDate(w.date)}</span>
+        <div class="hist-detail">${exList} <span class="muted">(${totalSets} sets)</span></div></div>`;
     }).join('');
   },
 
@@ -1934,33 +1924,6 @@ const I = {
       }
     }
 
-    // Import Apple Watch workouts
-    if(data.workouts && Array.isArray(data.workouts) && data.workouts.length) {
-      const workouts = S.get('workouts', []);
-      // Remove previously imported watch workouts for this date
-      const kept = workouts.filter(w => !(w.date === today && w.source === 'watch'));
-      data.workouts.forEach(wk => {
-        const type = (wk.type || 'Workout').replace(/([A-Z])/g, ' $1').trim();
-        const dur = Math.round(parseFloat(wk.duration) || 0);
-        const cal = Math.round(parseFloat(wk.cal) || 0);
-        const startTime = wk.start || '';
-        kept.push({
-          id: 'aw_' + today + '_' + type.replace(/\s/g,'_') + '_' + startTime.replace(/[^0-9]/g,'').slice(-4),
-          date: today,
-          source: 'watch',
-          exercises: [{
-            name: type,
-            sets: [],
-            duration: dur,
-            cal: cal,
-            startTime: startTime
-          }],
-          notes: `Apple Watch · ${dur}min · ${cal} cal`
-        });
-      });
-      S.set('workouts', kept);
-    }
-
     // Sync log
     if(!health.syncLog) health.syncLog = [];
     const parts = [];
@@ -1972,7 +1935,6 @@ const I = {
     if(data.weight) parts.push(`${(Math.round(data.weight*10)/10)}kg`);
     if(data.exerciseMins) parts.push(`${Math.round(data.exerciseMins)}m exercise`);
     if(data.distance) parts.push(`${(Math.round(data.distance*10)/10)}km`);
-    if(data.workouts && data.workouts.length) parts.push(`${data.workouts.length} workout${data.workouts.length>1?'s':''}`);
     health.syncLog.push({date: today, summary: parts.join(' | ') || 'Synced'});
     if(health.syncLog.length > 30) health.syncLog = health.syncLog.slice(-30);
 
