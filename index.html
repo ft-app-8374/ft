@@ -763,16 +763,14 @@ const T = {
     const foodCal = entry.foods.reduce((a,f) => a+f.cal, 0);
     if(foodCal > 0) metrics.push({label:'Eaten', value: foodCal.toLocaleString(), unit:'kcal', color:'#fb923c'});
 
-    // Net Calories (eaten - total burn)
-    const totalBurn = (aCal !== null ? aCal : 0) + (rCal !== null ? rCal : 0);
-    if(foodCal > 0 && totalBurn > 0) {
-      const net = Math.round(foodCal - totalBurn);
-      const netColor = net > 0 ? '#f59e0b' : net < -500 ? '#ef4444' : '#10b981';
-      const netLabel = net > 0 ? 'Surplus' : 'Deficit';
-      metrics.push({label:'Net Cal', value: (net > 0 ? '+' : '') + net.toLocaleString(), unit: netLabel, color: netColor});
+    // Net Calories (eaten - active calories burned)
+    if(foodCal > 0 && aCal !== null && aCal > 0) {
+      const net = Math.round(foodCal - aCal);
+      const netColor = net > 0 ? '#f59e0b' : '#10b981';
+      metrics.push({label:'Net Cal', value: (net > 0 ? '+' : '') + net.toLocaleString(), unit: net > 0 ? 'over' : 'under', color: netColor});
 
       // Store net calories for charting
-      this.storeNetCalories(date, net, foodCal, Math.round(totalBurn));
+      this.storeNetCalories(date, net, foodCal, Math.round(aCal));
     }
 
     if(!metrics.length) {
