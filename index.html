@@ -185,6 +185,18 @@ textarea{resize:vertical;min-height:80px}
 .health-metric .hm-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px}
 .health-metric .hm-unit{font-size:13px;color:#64748b;font-weight:400}
 .health-metric.wide{grid-column:span 2}
+
+/* ── Guided Workout ── */
+.guided-ex-item{background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:14px;margin:8px 0;
+  display:flex;justify-content:space-between;align-items:center}
+.guided-ex-item.current{border-color:#3b82f6;background:#0f1a2e}
+.guided-ex-item.done{opacity:.5}
+.guided-ex-item .gx-name{font-size:15px;font-weight:600}
+.guided-ex-item .gx-detail{font-size:13px;color:#64748b;margin-top:2px}
+.guided-ex-item .gx-status{font-size:20px;flex-shrink:0;margin-left:10px}
+.form-tip{background:#0f172a;border-left:3px solid #f59e0b;padding:10px 12px;border-radius:0 10px 10px 0;
+  font-size:13px;color:#cbd5e1;line-height:1.5;margin-bottom:8px}
+.form-tip b{color:#f59e0b}
   </style>
 </head>
 <body>
@@ -276,21 +288,39 @@ textarea{resize:vertical;min-height:80px}
 <div class="wrap">
   <h2 style="margin-bottom:12px">Workout</h2>
 
-  <div class="card">
-    <h3>Select Exercise</h3>
-    <div id="exercise-pills"></div>
+  <!-- Suggested Workout -->
+  <div class="card" id="suggested-workout-card">
+    <h3>Suggested Workout</h3>
+    <div id="suggested-workout"></div>
+    <div class="spacer"></div>
+    <div class="row">
+      <button class="btn btn-primary btn-sm" style="flex:1" onclick="W.generateWorkout(30)">30 min</button>
+      <button class="btn btn-primary btn-sm" style="flex:1" onclick="W.generateWorkout(60)">60 min</button>
+    </div>
   </div>
 
+  <!-- Guided Workout (shown when following a plan) -->
+  <div id="guided-workout" class="hidden">
+    <div class="card" style="border-color:#3b82f6">
+      <div class="row" style="justify-content:space-between;margin-bottom:4px">
+        <h3 style="margin:0;color:#3b82f6">Guided Workout</h3>
+        <button class="btn-icon" onclick="W.endGuided()" style="color:#ef4444;font-size:16px">End</button>
+      </div>
+      <div id="guided-progress" class="muted small" style="margin-bottom:12px"></div>
+      <div id="guided-current"></div>
+    </div>
+  </div>
+
+  <!-- Active Exercise (manual or guided) -->
   <div id="active-exercise" class="hidden">
     <div class="card">
-      <div class="row" style="justify-content:space-between;margin-bottom:8px">
+      <div class="row" style="justify-content:space-between;margin-bottom:4px">
         <h3 id="active-ex-name" style="margin:0"></h3>
-        <div>
-          <button class="btn-icon" onclick="W.showExerciseInfo()" title="Info">&#9432;</button>
-        </div>
+        <button class="btn-icon" onclick="W.showExerciseInfo()" title="Form Guide" style="font-size:18px">&#9432;</button>
       </div>
-      <div id="last-session-info" class="muted small"></div>
-      <div class="spacer"></div>
+      <div id="active-ex-muscles" class="muted small" style="margin-bottom:4px"></div>
+      <div id="active-ex-tips" style="margin-bottom:10px"></div>
+      <div id="last-session-info" class="muted small" style="margin-bottom:8px"></div>
       <div id="sets-list"></div>
       <div class="spacer"></div>
       <div class="row">
@@ -298,6 +328,12 @@ textarea{resize:vertical;min-height:80px}
         <button class="btn btn-primary btn-sm" onclick="W.finishExercise()">Finish Exercise</button>
       </div>
     </div>
+  </div>
+
+  <!-- Manual Exercise Select -->
+  <div class="card" id="manual-exercise-card">
+    <h3>Or Pick an Exercise</h3>
+    <div id="exercise-pills"></div>
   </div>
 
   <div class="card">
@@ -1070,6 +1106,7 @@ const W = {
   currentSets: [],
   restInterval: null,
   restRemaining: 0,
+  guidedPlan: null,    // {exercises: [{name, sets, reps, weight, rest, done}], duration, currentIdx}
 
   render() {
     const exercises = S.get('exercises', []);
@@ -1085,10 +1122,34 @@ const W = {
     }
     document.getElementById('exercise-pills').innerHTML = html;
 
+    // Show/hide suggested workout vs guided workout
+    if(this.guidedPlan) {
+      document.getElementById('suggested-workout-card').classList.add('hidden');
+      document.getElementById('guided-workout').classList.remove('hidden');
+      this.renderGuided();
+    } else {
+      document.getElementById('suggested-workout-card').classList.remove('hidden');
+      document.getElementById('guided-workout').classList.add('hidden');
+      this.renderSuggestion();
+    }
+
     if(this.selectedExercise) {
       document.getElementById('active-exercise').classList.remove('hidden');
       document.getElementById('active-ex-name').textContent = this.selectedExercise;
       const ex = exercises.find(e => e.name === this.selectedExercise);
+
+      // Show muscles
+      const musclesEl = document.getElementById('active-ex-muscles');
+      musclesEl.textContent = ex && ex.muscles ? 'Targets: ' + ex.muscles.join(', ') : '';
+
+      // Show inline form tips
+      const tipsEl = document.getElementById('active-ex-tips');
+      if(ex && ex.tips && ex.tips.length) {
+        tipsEl.innerHTML = ex.tips.map(t => `<div class="form-tip">${t}</div>`).join('');
+      } else {
+        tipsEl.innerHTML = '';
+      }
+
       const lastInfo = ex && ex.lastWeight ? `Last: ${ex.lastWeight}kg x ${ex.lastReps} reps` : 'No previous data';
       const prInfo = ex && ex.pr ? ` | PR: ${ex.pr.weight}kg x ${ex.pr.reps}` : '';
       document.getElementById('last-session-info').textContent = lastInfo + prInfo;
@@ -1101,13 +1162,205 @@ const W = {
     this.renderHistory();
   },
 
+  // ── Workout Generation ──
+  generateWorkout(mins) {
+    const exercises = S.get('exercises', []);
+    const workouts = S.get('workouts', []);
+    const today = S.today();
+    const daily = S.get('daily', []);
+    const todayEntry = daily.find(d => d.date === today);
+    const health = S.get('healthImport', null);
+
+    // Figure out what was trained recently
+    const recent7 = workouts.filter(w => daysBetween(w.date, today) <= 7 && w.date !== today);
+    const recentCats = {};
+    recent7.forEach(w => {
+      w.exercises.forEach(e => {
+        const ex = exercises.find(x => x.name === e.name);
+        if(ex) recentCats[ex.cat] = (recentCats[ex.cat]||0) + 1;
+      });
+    });
+
+    // Prioritize least-trained categories
+    const catOrder = ['push','pull','legs','core'].sort((a,b) => (recentCats[a]||0) - (recentCats[b]||0));
+
+    // Check energy level
+    const energy = todayEntry ? todayEntry.energy : 0;
+    const isLowEnergy = energy > 0 && energy <= 2;
+
+    // Check HRV for recovery state
+    let recoveryOK = true;
+    if(health && health.hrv && health.hrv.length >= 3) {
+      const avgHRV = health.hrv.slice(-7).reduce((a,r) => a+r.value, 0) / Math.min(health.hrv.length, 7);
+      const todayHRV = health.hrv.filter(r => r.date === today);
+      if(todayHRV.length && todayHRV[todayHRV.length-1].value < avgHRV * 0.8) recoveryOK = false;
+    }
+
+    // Build the plan
+    const plan = [];
+    const setsPerExercise = mins <= 30 ? 3 : 4;
+    const exerciseCount = mins <= 30 ? 4 : 6;
+    const restTime = isLowEnergy || !recoveryOK ? 120 : 90;
+
+    // Select exercises — 2 from primary category, 1-2 from secondary, 1 core
+    const primaryCat = catOrder[0];
+    const secondaryCat = catOrder[1];
+    const primaryExs = exercises.filter(e => e.cat === primaryCat);
+    const secondaryExs = exercises.filter(e => e.cat === secondaryCat);
+    const coreExs = exercises.filter(e => e.cat === 'core');
+
+    // Shuffle and pick
+    const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
+    const picked = [];
+
+    // Primary — pick 2
+    shuffle(primaryExs).slice(0, 2).forEach(e => picked.push(e));
+    // Secondary — pick 1-2
+    shuffle(secondaryExs).slice(0, mins <= 30 ? 1 : 2).forEach(e => picked.push(e));
+    // Core — pick 1
+    if(coreExs.length) shuffle(coreExs).slice(0, 1).forEach(e => picked.push(e));
+    // Fill remaining from other categories if needed
+    if(picked.length < exerciseCount) {
+      const remaining = exercises.filter(e => !picked.find(p => p.name === e.name));
+      shuffle(remaining).slice(0, exerciseCount - picked.length).forEach(e => picked.push(e));
+    }
+
+    picked.forEach(ex => {
+      const weight = ex.lastWeight || 0;
+      const reps = isLowEnergy ? Math.max(6, (ex.lastReps || 8)) : (ex.lastReps || 8);
+      plan.push({
+        name: ex.name,
+        sets: setsPerExercise,
+        reps: reps,
+        weight: weight,
+        rest: ex.cat === 'core' ? 60 : restTime,
+        done: false,
+        cat: ex.cat,
+        tips: ex.tips || [],
+        muscles: ex.muscles || [],
+        video: ex.video || ''
+      });
+    });
+
+    // Compute time estimate
+    const totalSets = plan.reduce((a,p) => a+p.sets, 0);
+    const estMins = Math.round(totalSets * 1.5 + totalSets * (restTime/60));
+
+    // Show the suggestion
+    this._lastSuggestion = {plan, estMins, isLowEnergy, recoveryOK, primaryCat, secondaryCat};
+    this.renderSuggestion();
+  },
+
+  _lastSuggestion: null,
+
+  renderSuggestion() {
+    const el = document.getElementById('suggested-workout');
+    const s = this._lastSuggestion;
+    if(!s) {
+      el.innerHTML = '<div class="muted" style="text-align:center">Tap 30 or 60 min to get a personalized workout plan based on your training history, energy, and recovery.</div>';
+      return;
+    }
+
+    const catLabels = {push:'Push', pull:'Pull', legs:'Legs', core:'Core'};
+    let html = '';
+
+    // Status badges
+    if(!s.recoveryOK) {
+      html += '<div class="form-tip"><b>Recovery alert:</b> HRV is below your average. Lighter weights and higher reps recommended.</div>';
+    }
+    if(s.isLowEnergy) {
+      html += '<div class="form-tip"><b>Low energy:</b> Workout adjusted for a lighter session.</div>';
+    }
+
+    html += `<div style="font-size:14px;color:#64748b;margin-bottom:8px">Focus: <b style="color:#3b82f6">${catLabels[s.primaryCat]}</b> + <b style="color:#3b82f6">${catLabels[s.secondaryCat]}</b> · ~${s.estMins} min</div>`;
+
+    html += s.plan.map((p, i) =>
+      `<div class="guided-ex-item">
+        <div>
+          <div class="gx-name">${p.name}</div>
+          <div class="gx-detail">${p.sets} sets x ${p.reps} reps${p.weight ? ' @ '+p.weight+'kg' : ''} · ${p.rest}s rest</div>
+          <div class="gx-detail" style="color:#94a3b8">${p.muscles.join(', ')}</div>
+        </div>
+      </div>`
+    ).join('');
+
+    html += '<div class="spacer"></div>';
+    html += '<button class="btn btn-primary btn-block" onclick="W.startGuided()">Start This Workout</button>';
+    html += '<div style="height:8px"></div>';
+    html += '<button class="btn btn-secondary btn-block btn-sm" onclick="W._lastSuggestion=null;W.render()">Dismiss</button>';
+
+    el.innerHTML = html;
+  },
+
+  // ── Guided Workout Flow ──
+  startGuided() {
+    if(!this._lastSuggestion) return;
+    this.guidedPlan = {
+      exercises: this._lastSuggestion.plan.map(p => ({...p, completedSets: 0})),
+      duration: this._lastSuggestion.estMins,
+      currentIdx: 0,
+      startTime: Date.now()
+    };
+    this._lastSuggestion = null;
+    // Auto-select first exercise
+    this.selectExercise(this.guidedPlan.exercises[0].name);
+    // Pre-fill sets from plan
+    const planned = this.guidedPlan.exercises[0];
+    this.currentSets = Array.from({length: planned.sets}, () => ({weight: planned.weight, reps: planned.reps, done: false}));
+    this.render();
+  },
+
+  renderGuided() {
+    const g = this.guidedPlan;
+    if(!g) return;
+
+    const elapsed = Math.round((Date.now() - g.startTime) / 60000);
+    const doneCount = g.exercises.filter(e => e.done).length;
+    document.getElementById('guided-progress').textContent = `${doneCount}/${g.exercises.length} exercises · ${elapsed} min elapsed`;
+
+    const el = document.getElementById('guided-current');
+    el.innerHTML = g.exercises.map((e, i) => {
+      const isCurrent = i === g.currentIdx;
+      const cls = e.done ? 'guided-ex-item done' : isCurrent ? 'guided-ex-item current' : 'guided-ex-item';
+      const status = e.done ? '&#10003;' : isCurrent ? '&#9654;' : `${i+1}`;
+      const onclick = e.done ? '' : `onclick="W.guidedSelectExercise(${i})"`;
+      return `<div class="${cls}" ${onclick} style="cursor:${e.done?'default':'pointer'}">
+        <div>
+          <div class="gx-name">${e.name}</div>
+          <div class="gx-detail">${e.sets} sets x ${e.reps} reps${e.weight ? ' @ '+e.weight+'kg' : ''}</div>
+        </div>
+        <div class="gx-status" style="color:${e.done?'#10b981':isCurrent?'#3b82f6':'#475569'}">${status}</div>
+      </div>`;
+    }).join('');
+  },
+
+  guidedSelectExercise(idx) {
+    const g = this.guidedPlan;
+    if(!g || g.exercises[idx].done) return;
+    g.currentIdx = idx;
+    const planned = g.exercises[idx];
+    this.selectExercise(planned.name);
+    this.currentSets = Array.from({length: planned.sets}, () => ({weight: planned.weight, reps: planned.reps, done: false}));
+    this.render();
+  },
+
+  endGuided() {
+    this.guidedPlan = null;
+    this.selectedExercise = null;
+    this.currentSets = [];
+    this.render();
+  },
+
   selectExercise(name) {
     this.selectedExercise = name;
     const exercises = S.get('exercises', []);
     const ex = exercises.find(e => e.name === name);
     const defaultWeight = ex && ex.lastWeight ? ex.lastWeight : 0;
     const defaultReps = ex && ex.lastReps ? ex.lastReps : 8;
-    this.currentSets = [{weight: defaultWeight, reps: defaultReps, done: false}];
+    // Only reset sets if not coming from guided (guided pre-fills)
+    if(!this.guidedPlan) {
+      this.currentSets = [{weight: defaultWeight, reps: defaultReps, done: false}];
+    }
     this.render();
   },
 
@@ -1130,7 +1383,9 @@ const W = {
     this.currentSets[i].done = !this.currentSets[i].done;
     this.renderSets();
     if(this.currentSets[i].done) {
-      const restSecs = S.get('settings', {}).restTimerDefault || 90;
+      const restSecs = this.guidedPlan
+        ? this.guidedPlan.exercises[this.guidedPlan.currentIdx].rest
+        : (S.get('settings', {}).restTimerDefault || 90);
       this.startTimer(restSecs);
     }
   },
@@ -1171,8 +1426,42 @@ const W = {
       S.set('exercises', exercises);
     }
 
-    this.selectedExercise = null;
-    this.currentSets = [];
+    // If guided, mark exercise done and advance
+    if(this.guidedPlan) {
+      const g = this.guidedPlan;
+      g.exercises[g.currentIdx].done = true;
+      g.exercises[g.currentIdx].completedSets = completedSets.length;
+
+      // Find next undone exercise
+      const nextIdx = g.exercises.findIndex((e, i) => i > g.currentIdx && !e.done);
+      if(nextIdx >= 0) {
+        g.currentIdx = nextIdx;
+        const next = g.exercises[nextIdx];
+        this.selectedExercise = next.name;
+        this.currentSets = Array.from({length: next.sets}, () => ({weight: next.weight, reps: next.reps, done: false}));
+      } else {
+        // Workout complete!
+        const totalTime = Math.round((Date.now() - g.startTime) / 60000);
+        const totalVol = todayWorkout.exercises.reduce((a,e) => a+e.sets.reduce((b,s) => b+s.weight*s.reps, 0), 0);
+        this.guidedPlan = null;
+        this.selectedExercise = null;
+        this.currentSets = [];
+        showModal(`
+          <h3>Workout Complete!</h3>
+          <div style="text-align:center;padding:16px 0">
+            <div style="font-size:48px;margin-bottom:12px">&#128170;</div>
+            <div style="font-size:18px;margin-bottom:8px"><b>${totalTime}</b> minutes</div>
+            <div style="font-size:16px;color:#64748b">${todayWorkout.exercises.length} exercises · ${Math.round(totalVol)}kg total volume</div>
+          </div>
+          <div class="spacer"></div>
+          <button class="btn btn-primary btn-block" onclick="closeModalForce()">Done</button>
+        `);
+      }
+    } else {
+      this.selectedExercise = null;
+      this.currentSets = [];
+    }
+
     this.render();
   },
 
@@ -1207,13 +1496,13 @@ const W = {
     const exercises = S.get('exercises', []);
     const ex = exercises.find(e => e.name === this.selectedExercise);
     if(!ex) return;
-    const tips = ex.tips ? ex.tips.map(t => `<li>${t}</li>`).join('') : '';
+    const tips = ex.tips ? ex.tips.map(t => `<li style="margin:6px 0">${t}</li>`).join('') : '';
     const muscles = ex.muscles ? ex.muscles.join(', ') : '';
     showModal(`
       <h3>${ex.name}</h3>
-      <div class="muted small" style="margin-bottom:8px">Targets: ${muscles}</div>
-      ${tips ? `<div style="margin-bottom:12px"><b class="small">Form Tips</b><ul style="padding-left:20px;margin-top:4px" class="small">${tips}</ul></div>` : ''}
-      ${ex.video ? `<a href="${ex.video}" target="_blank" rel="noopener" class="btn btn-primary btn-block btn-sm" style="display:block;text-decoration:none;text-align:center">Watch Form Video</a>` : ''}
+      <div class="muted" style="margin-bottom:12px;font-size:15px">Targets: <b>${muscles}</b></div>
+      ${tips ? `<div style="margin-bottom:16px"><div style="font-size:16px;font-weight:700;color:#f59e0b;margin-bottom:8px">Form Guide</div><ul style="padding-left:20px;font-size:15px;line-height:1.8">${tips}</ul></div>` : ''}
+      ${ex.video ? `<a href="${ex.video}" target="_blank" rel="noopener" class="btn btn-primary btn-block" style="display:block;text-decoration:none;text-align:center;font-size:16px">&#9654; Watch Form Video</a>` : ''}
       <div class="spacer"></div>
       <button class="btn btn-secondary btn-block btn-sm" onclick="closeModalForce()">Close</button>
     `);
