@@ -735,8 +735,10 @@ const T = {
     if(exMins !== null) metrics.push({label:'Exercise', value: Math.round(exMins), unit:'min', color:'#10b981'});
     const dist = val('distance');
     if(dist !== null) metrics.push({label:'Distance', value: dist.toFixed(1), unit:'km', color:'#06b6d4'});
-    const standM = val('standHours') || val('standMins');
-    if(standM !== null) metrics.push({label:'Stand', value: Math.round(standM), unit: health.standHours ? 'hrs' : 'min', color:'#a855f7'});
+    const standHrs = val('standHours');
+    const standMin = val('standMins');
+    if(standHrs !== null) metrics.push({label:'Stand', value: Math.round(standHrs), unit:'hrs', color:'#a855f7'});
+    else if(standMin !== null) metrics.push({label:'Stand', value: Math.round(standMin), unit:'min', color:'#a855f7'});
     const rHR = last('restingHR');
     if(rHR !== null) {
       const hrColor = rHR < 60 ? '#10b981' : rHR > 80 ? '#ef4444' : '#f59e0b';
