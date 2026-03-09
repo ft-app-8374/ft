@@ -513,7 +513,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 23;
+const APP_VERSION = 24;
 
 /* ── Storage helpers ── */
 const S = {
@@ -1662,25 +1662,37 @@ const W = {
   },
 
   renderTodaySummary() {
-    const workouts = S.get('workouts', []);
-    const today = workouts.find(w => w.date === S.today());
-    if(!today || !today.exercises.length) {
+    const workouts = S.get('workouts', []).filter(w => w.date === S.today());
+    if(!workouts.length) {
       document.getElementById('workout-today-summary').innerHTML = '<span class="muted">No exercises logged yet</span>';
       return;
     }
-    document.getElementById('workout-today-summary').innerHTML = today.exercises.map(e => {
-      const setsStr = e.sets.map(s => `${s.weight}kg x ${s.reps}`).join(', ');
-      return `<div class="hist-item"><b>${e.name}</b><br><span class="small muted">${setsStr}</span></div>`;
-    }).join('');
+    let html = '';
+    workouts.forEach(w => {
+      w.exercises.forEach(e => {
+        if(w.source === 'watch') {
+          html += `<div class="hist-item"><b>⌚ ${e.name}</b><br><span class="small muted">${e.duration||0}min · ${e.cal||0} cal${e.startTime ? ' · '+e.startTime : ''}</span></div>`;
+        } else {
+          const setsStr = e.sets.map(s => `${s.weight}kg x ${s.reps}`).join(', ');
+          html += `<div class="hist-item"><b>${e.name}</b><br><span class="small muted">${setsStr}</span></div>`;
+        }
+      });
+    });
+    document.getElementById('workout-today-summary').innerHTML = html || '<span class="muted">No exercises logged yet</span>';
   },
 
   renderHistory() {
-    const workouts = S.get('workouts', []).filter(w => w.date !== S.today()).sort((a,b) => b.date.localeCompare(a.date)).slice(0,5);
+    const workouts = S.get('workouts', []).filter(w => w.date !== S.today()).sort((a,b) => b.date.localeCompare(a.date)).slice(0,10);
     if(!workouts.length) {
       document.getElementById('workout-history').innerHTML = '<span class="muted">No previous workouts</span>';
       return;
     }
     document.getElementById('workout-history').innerHTML = workouts.map(w => {
+      if(w.source === 'watch') {
+        const e = w.exercises[0];
+        return `<div class="hist-item"><span class="hist-date">${fmtDate(w.date)}</span>
+          <div class="hist-detail">⌚ ${e.name} <span class="muted">${e.duration||0}min · ${e.cal||0} cal</span></div></div>`;
+      }
       const exList = w.exercises.map(e => e.name).join(', ');
       const totalSets = w.exercises.reduce((a,e) => a+e.sets.length, 0);
       return `<div class="hist-item"><span class="hist-date">${fmtDate(w.date)}</span>
@@ -1889,6 +1901,33 @@ const I = {
       }
     }
 
+    // Import Apple Watch workouts
+    if(data.workouts && Array.isArray(data.workouts) && data.workouts.length) {
+      const workouts = S.get('workouts', []);
+      // Remove previously imported watch workouts for this date
+      const kept = workouts.filter(w => !(w.date === today && w.source === 'watch'));
+      data.workouts.forEach(wk => {
+        const type = (wk.type || 'Workout').replace(/([A-Z])/g, ' $1').trim();
+        const dur = Math.round(parseFloat(wk.duration) || 0);
+        const cal = Math.round(parseFloat(wk.cal) || 0);
+        const startTime = wk.start || '';
+        kept.push({
+          id: 'aw_' + today + '_' + type.replace(/\s/g,'_') + '_' + startTime.replace(/[^0-9]/g,'').slice(-4),
+          date: today,
+          source: 'watch',
+          exercises: [{
+            name: type,
+            sets: [],
+            duration: dur,
+            cal: cal,
+            startTime: startTime
+          }],
+          notes: `Apple Watch · ${dur}min · ${cal} cal`
+        });
+      });
+      S.set('workouts', kept);
+    }
+
     // Sync log
     if(!health.syncLog) health.syncLog = [];
     const parts = [];
@@ -1900,6 +1939,7 @@ const I = {
     if(data.weight) parts.push(`${(Math.round(data.weight*10)/10)}kg`);
     if(data.exerciseMins) parts.push(`${Math.round(data.exerciseMins)}m exercise`);
     if(data.distance) parts.push(`${(Math.round(data.distance*10)/10)}km`);
+    if(data.workouts && data.workouts.length) parts.push(`${data.workouts.length} workout${data.workouts.length>1?'s':''}`);
     health.syncLog.push({date: today, summary: parts.join(' | ') || 'Synced'});
     if(health.syncLog.length > 30) health.syncLog = health.syncLog.slice(-30);
 
