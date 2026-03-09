@@ -1605,7 +1605,17 @@ T.render();
 T.initSearch();
 
 if('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    // Check for updates every time the app is opened
+    reg.update();
+    // When a new SW is waiting, activate it and reload
+    reg.addEventListener('updatefound', () => {
+      const newSW = reg.installing;
+      newSW.addEventListener('statechange', () => {
+        if(newSW.state === 'activated') window.location.reload();
+      });
+    });
+  }).catch(() => {});
 }
 
 // Request notification permission for rest timer
