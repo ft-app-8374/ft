@@ -975,9 +975,83 @@ const F = {
   addSearchResult(idx) {
     const p = this._lastResults[idx];
     if(!p) return;
-    const cal = Math.round(p.nutriments['energy-kcal_100g'] || p.nutriments['energy-kcal'] || 0);
+    const calPer100 = Math.round(p.nutriments['energy-kcal_100g'] || 0);
+    const calTotal = Math.round(p.nutriments['energy-kcal'] || 0);
     const name = p.product_name + (p.brands ? ` (${p.brands})` : '');
-    this.addFood(name, cal);
+    const qty = p.quantity || '';
+
+    // Try to extract serving size from quantity string (e.g. "250ml", "300g")
+    let defaultServing = 100;
+    const qtyMatch = qty.match(/(\d+)\s*(ml|g|cl|l)\b/i);
+    if(qtyMatch) {
+      let val = parseFloat(qtyMatch[1]);
+      const unit = qtyMatch[2].toLowerCase();
+      if(unit === 'l') val *= 1000;
+      if(unit === 'cl') val *= 10;
+      defaultServing = val;
+    }
+
+    if(calPer100 > 0) {
+      // Show portion modal
+      this._pendingFood = {name, calPer100, qty};
+      const estCal = Math.round(calPer100 * defaultServing / 100);
+      showModal(`
+        <h3>How much?</h3>
+        <div style="font-size:16px;margin-bottom:4px"><b>${p.product_name}</b></div>
+        <div class="muted small" style="margin-bottom:14px">${p.brands||''} ${qty ? '· '+qty : ''} · ${calPer100} cal/100g</div>
+        <div class="measure-input">
+          <label style="width:100px">Portion (g/ml)</label>
+          <button class="adj-btn" onclick="F.adjPortion(-50)">&minus;</button>
+          <input id="portion-input" inputmode="numeric" value="${defaultServing}" style="width:90px" oninput="F.updatePortionCal()">
+          <button class="adj-btn" onclick="F.adjPortion(50)">+</button>
+        </div>
+        <div style="text-align:center;margin:14px 0">
+          <div style="font-size:13px;color:#64748b">Estimated calories</div>
+          <div id="portion-cal-display" style="font-size:36px;font-weight:800;color:#3b82f6">${estCal}</div>
+        </div>
+        <div class="row" style="gap:8px;margin-bottom:8px">
+          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(50)">50g</button>
+          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(100)">100g</button>
+          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(150)">150g</button>
+          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(250)">250g</button>
+        </div>
+        <button class="btn btn-primary btn-block" onclick="F.confirmPortion()">Add</button>
+      `);
+    } else if(calTotal > 0) {
+      // No per-100g data, just total — add directly
+      this.addFood(name, calTotal);
+      this.clearSearch();
+    }
+  },
+
+  _pendingFood: null,
+
+  adjPortion(delta) {
+    const inp = document.getElementById('portion-input');
+    const val = Math.max(10, (parseInt(inp.value) || 100) + delta);
+    inp.value = val;
+    this.updatePortionCal();
+  },
+
+  setPortionQuick(g) {
+    document.getElementById('portion-input').value = g;
+    this.updatePortionCal();
+  },
+
+  updatePortionCal() {
+    if(!this._pendingFood) return;
+    const portion = parseInt(document.getElementById('portion-input').value) || 100;
+    const cal = Math.round(this._pendingFood.calPer100 * portion / 100);
+    document.getElementById('portion-cal-display').textContent = cal;
+  },
+
+  confirmPortion() {
+    if(!this._pendingFood) return;
+    const portion = parseInt(document.getElementById('portion-input').value) || 100;
+    const cal = Math.round(this._pendingFood.calPer100 * portion / 100);
+    this.addFood(this._pendingFood.name, cal);
+    this._pendingFood = null;
+    closeModalForce();
     this.clearSearch();
   },
 
@@ -1047,11 +1121,11 @@ const F = {
       const data = await resp.json();
       if(data.status === 1 && data.product) {
         const p = data.product;
-        const cal = Math.round(p.nutriments?.['energy-kcal_100g'] || p.nutriments?.['energy-kcal'] || 0);
-        const name = p.product_name + (p.brands ? ` (${p.brands})` : '');
         this.stopScanner();
         closeModalForce();
-        this.addFood(name, cal);
+        // Use the same portion flow as search results
+        this._lastResults = [p];
+        this.addSearchResult(0);
       } else {
         if(statusEl) statusEl.textContent = 'Product not found in database. Try searching by name instead.';
       }
