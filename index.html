@@ -130,7 +130,7 @@ textarea{resize:vertical;min-height:80px}
 .chart-container canvas{width:100%;height:100%}
 .range-pills{display:flex;gap:8px;margin-bottom:10px}
 
-/* ── Analysis ── */
+/* ── Analysis / Insights ── */
 .insight-card{background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:16px;margin:10px 0}
 .insight-card .insight-title{font-size:14px;color:#3b82f6;font-weight:700;margin-bottom:6px}
 .insight-card .insight-body{font-size:15px;line-height:1.6}
@@ -177,6 +177,14 @@ textarea{resize:vertical;min-height:80px}
   width:220px;height:220px;border:3px solid #3b82f6;border-radius:16px;
   box-shadow:0 0 0 9999px rgba(0,0,0,.5)}
 .scanner-status{text-align:center;margin-top:10px;font-size:15px}
+
+/* ── Dashboard Health Grid ── */
+.health-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.health-metric{background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:14px;text-align:center}
+.health-metric .hm-value{font-size:24px;font-weight:800;margin-bottom:2px}
+.health-metric .hm-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px}
+.health-metric .hm-unit{font-size:13px;color:#64748b;font-weight:400}
+.health-metric.wide{grid-column:span 2}
   </style>
 </head>
 <body>
@@ -184,14 +192,24 @@ textarea{resize:vertical;min-height:80px}
 <!-- ════════════════ APP ════════════════ -->
 <main id="app">
 
-<!-- ── TODAY TAB ── -->
+<!-- ── TODAY TAB (Dashboard) ── -->
 <div id="tab-today" class="tab-content active">
 <div class="wrap">
-  <h2 style="margin-bottom:8px">Today</h2>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <h2 style="margin-bottom:8px">Dashboard</h2>
+    <button class="btn btn-secondary btn-sm" onclick="switchTab('sync')" style="font-size:13px;padding:8px 14px">Sync Health</button>
+  </div>
   <div class="date-nav">
     <button class="btn-icon" onclick="T.prevDay()">&larr;</button>
     <span class="date-str" id="today-date"></span>
     <button class="btn-icon" onclick="T.nextDay()">&rarr;</button>
+  </div>
+
+  <div class="card" id="health-dashboard-card">
+    <h3>Health <span id="health-sync-ago" class="muted" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h3>
+    <div class="health-grid" id="health-grid">
+      <div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No health data synced yet. Go to Sync tab to import.</div>
+    </div>
   </div>
 
   <div class="card">
@@ -210,6 +228,23 @@ textarea{resize:vertical;min-height:80px}
     </div>
   </div>
 
+  <div class="card">
+    <h3>Today's Summary</h3>
+    <div id="today-summary"></div>
+  </div>
+
+  <div class="card" id="insights-card">
+    <h3>Insights</h3>
+    <div id="insights-content"></div>
+  </div>
+</div>
+</div>
+
+<!-- ── FOOD TAB ── -->
+<div id="tab-food" class="tab-content">
+<div class="wrap">
+  <h2 style="margin-bottom:12px">Food</h2>
+
   <div class="card" id="recents-card">
     <h3>Recent Foods</h3>
     <div class="recents-row" id="recents-row"><span class="muted small">No recent foods yet</span></div>
@@ -219,24 +254,19 @@ textarea{resize:vertical;min-height:80px}
     <h3>Add Food</h3>
     <div class="food-search-wrap">
       <input id="food-search" placeholder="Search food (e.g. banana, chicken rice)" autocomplete="off" autocorrect="off">
-      <button class="food-search-clear hidden" id="food-search-clear" onclick="T.clearSearch()">&times;</button>
+      <button class="food-search-clear hidden" id="food-search-clear" onclick="F.clearSearch()">&times;</button>
     </div>
     <div id="search-results"></div>
     <div class="spacer"></div>
     <div class="row">
-      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="T.showScanner()">&#128247; Scan Barcode</button>
-      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="T.showCustomFood()">+ Custom Entry</button>
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.showScanner()">&#128247; Scan Barcode</button>
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.showCustomFood()">+ Custom Entry</button>
     </div>
   </div>
 
   <div class="card" id="food-log-card">
     <h3>Today's Food <span id="food-total-cal" class="badge" style="margin-left:6px"></span></h3>
     <div id="food-log-list"></div>
-  </div>
-
-  <div class="card">
-    <h3>Daily Summary</h3>
-    <div id="today-summary"></div>
   </div>
 </div>
 </div>
@@ -324,27 +354,19 @@ textarea{resize:vertical;min-height:80px}
 </div>
 </div>
 
-<!-- ── IMPORT TAB ── -->
-<div id="tab-import" class="tab-content">
+<!-- ── SYNC TAB ── -->
+<div id="tab-sync" class="tab-content">
 <div class="wrap">
   <h2 style="margin-bottom:12px">Health Sync</h2>
 
   <div class="card">
-    <h3>Apple Health Shortcut</h3>
-    <p style="font-size:15px;line-height:1.6;margin-bottom:12px">
-      Sync your Health data automatically using an iOS Shortcut. One tap syncs today's steps, weight, heart rate, sleep, and calories.
+    <h3>Apple Health</h3>
+    <p style="font-size:15px;line-height:1.6;margin-bottom:14px">
+      Run your iOS Shortcut, then tap Paste to import today's health data.
     </p>
-    <div class="row">
-      <button class="btn btn-primary" style="flex:1" onclick="I.showShortcutGuide()">Set Up Shortcut</button>
-      <button class="btn btn-secondary" style="flex:1" onclick="I.pasteFromClipboard()">Paste from Health</button>
-    </div>
+    <button class="btn btn-primary btn-block" onclick="I.pasteFromClipboard()" style="font-size:18px;padding:18px">Paste from Health</button>
     <div class="spacer"></div>
     <div id="last-sync" class="muted" style="text-align:center"></div>
-  </div>
-
-  <div class="card">
-    <h3>Today's Health Data</h3>
-    <div id="health-today-display"></div>
   </div>
 
   <div class="card">
@@ -376,11 +398,11 @@ textarea{resize:vertical;min-height:80px}
 </div>
 </div>
 
-<!-- ── ANALYSIS TAB ── -->
-<div id="tab-analysis" class="tab-content">
+<!-- ── COACH TAB ── -->
+<div id="tab-coach" class="tab-content">
 <div class="wrap">
-  <h2 style="margin-bottom:12px">Analysis</h2>
-  <div id="analysis-content"></div>
+  <h2 style="margin-bottom:12px">Coach</h2>
+  <div id="coach-content"></div>
 </div>
 </div>
 
@@ -393,6 +415,8 @@ textarea{resize:vertical;min-height:80px}
     <button class="pill active" data-chart="weight" onclick="C.switchChart('weight')">Weight</button>
     <button class="pill" data-chart="volume" onclick="C.switchChart('volume')">Volume</button>
     <button class="pill" data-chart="calories" onclick="C.switchChart('calories')">Calories</button>
+    <button class="pill" data-chart="steps" onclick="C.switchChart('steps')">Steps</button>
+    <button class="pill" data-chart="heart" onclick="C.switchChart('heart')">Heart</button>
     <button class="pill" data-chart="wellness" onclick="C.switchChart('wellness')">Wellness</button>
   </div>
 
@@ -414,7 +438,10 @@ textarea{resize:vertical;min-height:80px}
 <!-- ── TAB BAR ── -->
 <nav id="tab-bar">
   <button class="active" data-tab="today" onclick="switchTab('today')">
-    <span class="tab-icon">&#128197;</span><span>Today</span>
+    <span class="tab-icon">&#127968;</span><span>Today</span>
+  </button>
+  <button data-tab="food" onclick="switchTab('food')">
+    <span class="tab-icon">&#127858;</span><span>Food</span>
   </button>
   <button data-tab="workout" onclick="switchTab('workout')">
     <span class="tab-icon">&#127947;</span><span>Workout</span>
@@ -422,11 +449,8 @@ textarea{resize:vertical;min-height:80px}
   <button data-tab="measurements" onclick="switchTab('measurements')">
     <span class="tab-icon">&#128207;</span><span>Measures</span>
   </button>
-  <button data-tab="import" onclick="switchTab('import')">
-    <span class="tab-icon">&#128229;</span><span>Import</span>
-  </button>
-  <button data-tab="analysis" onclick="switchTab('analysis')">
-    <span class="tab-icon">&#129504;</span><span>Analysis</span>
+  <button data-tab="coach" onclick="switchTab('coach')">
+    <span class="tab-icon">&#129302;</span><span>Coach</span>
   </button>
   <button data-tab="charts" onclick="switchTab('charts')">
     <span class="tab-icon">&#128200;</span><span>Charts</span>
@@ -490,11 +514,12 @@ function switchTab(name) {
   document.querySelector(`#tab-bar button[data-tab="${name}"]`).classList.add('active');
   window.scrollTo(0, tabScrollPos['tab-'+name] || 0);
   if(name==='today') T.render();
+  if(name==='food') F.render();
   if(name==='workout') W.render();
   if(name==='measurements') M.render();
-  if(name==='analysis') A.render();
+  if(name==='sync') I.render();
+  if(name==='coach') Coach.render();
   if(name==='charts') C.render();
-  if(name==='import') I.render();
 }
 
 /* ── Modal ── */
@@ -577,7 +602,7 @@ function initExercises() {
 }
 
 /* ══════════════════════════════════════════
-   TODAY MODULE (T)
+   TODAY MODULE (T) — Dashboard
    ══════════════════════════════════════════ */
 const T = {
   viewDate: S.today(),
@@ -614,25 +639,11 @@ const T = {
       ).join('');
     }
 
-    // Recents
-    this.renderRecents();
-
-    // Food log
-    const logList = document.getElementById('food-log-list');
-    if(entry.foods.length === 0) {
-      logList.innerHTML = '<div class="muted small">No food logged</div>';
-    } else {
-      logList.innerHTML = entry.foods.map((f,i) =>
-        `<div class="food-item">
-          <div><span class="small">${f.time||''}</span> ${f.name} <span class="muted">${f.cal} cal</span></div>
-          <button class="btn-icon" onclick="T.removeFood(${i})">&times;</button>
-        </div>`
-      ).join('');
-    }
-    const totalCal = entry.foods.reduce((a,f) => a+f.cal, 0);
-    document.getElementById('food-total-cal').textContent = totalCal + ' cal';
+    // Health dashboard
+    this.renderHealthDashboard(d);
 
     // Summary
+    const totalCal = entry.foods.reduce((a,f) => a+f.cal, 0);
     const workouts = S.get('workouts', []).filter(w => w.date === d);
     let summary = '';
     if(entry.energy) summary += `Energy: ${emojiSets.energy[entry.energy-1]} `;
@@ -645,6 +656,165 @@ const T = {
       summary += ` | Exercises: <b>${workouts.reduce((a,w)=>a+w.exercises.length,0)}</b> (${totalSets} sets)`;
     }
     document.getElementById('today-summary').innerHTML = summary || '<span class="muted">Start logging to see your summary</span>';
+
+    // Insights
+    this.renderInsights();
+  },
+
+  renderHealthDashboard(date) {
+    const health = S.get('healthImport', null);
+    const grid = document.getElementById('health-grid');
+    const syncAgo = document.getElementById('health-sync-ago');
+
+    if(!health || !health.lastImport) {
+      grid.innerHTML = '<div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No health data yet. Go to Sync tab to import.</div>';
+      syncAgo.textContent = '';
+      return;
+    }
+
+    // Show sync age
+    const ago = Math.round((Date.now() - new Date(health.lastImport).getTime()) / 60000);
+    const agoStr = ago < 60 ? `${ago}m ago` : ago < 1440 ? `${Math.round(ago/60)}h ago` : `${Math.round(ago/1440)}d ago`;
+    syncAgo.textContent = `· synced ${agoStr}`;
+
+    const val = (field) => {
+      const arr = health[field] || [];
+      const dayVals = arr.filter(r => r.date === date);
+      return dayVals.length ? dayVals.reduce((a,r) => a + r.value, 0) : null;
+    };
+    const last = (field) => {
+      const arr = health[field] || [];
+      const dayVals = arr.filter(r => r.date === date);
+      return dayVals.length ? dayVals[dayVals.length-1].value : null;
+    };
+
+    const metrics = [];
+    const steps = val('steps');
+    if(steps !== null) metrics.push({label:'Steps', value: Math.round(steps).toLocaleString(), color:'#3b82f6'});
+    const aCal = val('activeCal');
+    if(aCal !== null) metrics.push({label:'Active Cal', value: Math.round(aCal).toLocaleString(), unit:'kcal', color:'#f59e0b'});
+    const rCal = val('restingEnergy');
+    if(rCal !== null) metrics.push({label:'Resting Cal', value: Math.round(rCal).toLocaleString(), unit:'kcal', color:'#8b5cf6'});
+    const exMins = val('exerciseMins');
+    if(exMins !== null) metrics.push({label:'Exercise', value: Math.round(exMins), unit:'min', color:'#10b981'});
+    const dist = val('distance');
+    if(dist !== null) metrics.push({label:'Distance', value: dist.toFixed(1), unit:'km', color:'#06b6d4'});
+    const standM = val('standHours') || val('standMins');
+    if(standM !== null) metrics.push({label:'Stand', value: Math.round(standM), unit: health.standHours ? 'hrs' : 'min', color:'#a855f7'});
+    const rHR = last('restingHR');
+    if(rHR !== null) {
+      const hrColor = rHR < 60 ? '#10b981' : rHR > 80 ? '#ef4444' : '#f59e0b';
+      metrics.push({label:'Resting HR', value: Math.round(rHR), unit:'bpm', color: hrColor});
+    }
+    const hrv = last('hrv');
+    if(hrv !== null) {
+      const hrvColor = hrv > 40 ? '#10b981' : hrv < 20 ? '#ef4444' : '#f59e0b';
+      metrics.push({label:'HRV', value: Math.round(hrv), unit:'ms', color: hrvColor});
+    }
+    const slp = val('sleep');
+    if(slp !== null) {
+      const slpColor = slp >= 7 ? '#10b981' : slp < 6 ? '#ef4444' : '#f59e0b';
+      metrics.push({label:'Sleep', value: (Math.round(slp*10)/10).toString(), unit:'hrs', color: slpColor});
+    }
+    const wt = last('weight');
+    if(wt !== null) metrics.push({label:'Weight', value: (Math.round(wt*10)/10).toString(), unit:'kg', color:'#64748b'});
+
+    if(!metrics.length) {
+      grid.innerHTML = '<div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No health data for this date.</div>';
+      return;
+    }
+
+    grid.innerHTML = metrics.map(m =>
+      `<div class="health-metric">
+        <div class="hm-value" style="color:${m.color}">${m.value}${m.unit ? ` <span class="hm-unit">${m.unit}</span>` : ''}</div>
+        <div class="hm-label">${m.label}</div>
+      </div>`
+    ).join('');
+  },
+
+  renderInsights() {
+    const el = document.getElementById('insights-content');
+    let html = '';
+    const workouts = S.get('workouts', []);
+    const daily = S.get('daily', []);
+
+    // Workout streak
+    const sortedWorkouts = workouts.slice().sort((a,b) => b.date.localeCompare(a.date));
+    let streak = 0;
+    let checkDate = S.today();
+    for(let i = 0; i < 60; i++) {
+      if(sortedWorkouts.find(w => w.date === checkDate)) {
+        streak++;
+        checkDate = addDays(checkDate, -1);
+      } else if(i === 0) {
+        checkDate = addDays(checkDate, -1);
+        continue;
+      } else {
+        break;
+      }
+    }
+
+    if(streak > 0) {
+      html += `<div class="insight-card"><div class="insight-title">Workout Streak</div>
+        <div class="insight-body"><span class="streak-badge">🔥 ${streak} day${streak>1?'s':''}</span></div></div>`;
+    }
+
+    // Weekly volume comparison
+    const thisWeekStart = weekStart(S.today());
+    const lastWeekStart = addDays(thisWeekStart, -7);
+    const thisWeekWorkouts = workouts.filter(w => w.date >= thisWeekStart);
+    const lastWeekWorkouts = workouts.filter(w => w.date >= lastWeekStart && w.date < thisWeekStart);
+    const thisWeekVol = thisWeekWorkouts.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+    const lastWeekVol = lastWeekWorkouts.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+
+    if(lastWeekVol > 0 && thisWeekVol > 0) {
+      const change = ((thisWeekVol - lastWeekVol) / lastWeekVol * 100).toFixed(0);
+      const dir = change > 0 ? 'up' : change < 0 ? 'down' : 'same';
+      const badge = dir === 'up' ? 'badge-green' : dir === 'down' ? 'badge-red' : '';
+      html += `<div class="insight-card"><div class="insight-title">Weekly Volume</div>
+        <div class="insight-body">This week: <b>${Math.round(thisWeekVol)}</b>kg vs last week: <b>${Math.round(lastWeekVol)}</b>kg
+        <span class="${badge} badge">${change>0?'+':''}${change}%</span></div></div>`;
+    }
+
+    // Recent PRs
+    const exercises = S.get('exercises', []);
+    const recentPRs = exercises.filter(e => e.pr && e.pr.date && daysBetween(e.pr.date, S.today()) <= 7);
+    if(recentPRs.length) {
+      html += `<div class="insight-card"><div class="insight-title">Recent PRs</div>
+        <div class="insight-body">${recentPRs.map(e => `<div>${e.name}: ${e.pr.weight}kg x ${e.pr.reps}</div>`).join('')}</div></div>`;
+    }
+
+    // Health trends
+    const health = S.get('healthImport', null);
+    if(health) {
+      const recentSteps = (health.steps || []).slice(-7);
+      if(recentSteps.length >= 3) {
+        const avgSteps = Math.round(recentSteps.reduce((a,r) => a+r.value, 0) / recentSteps.length);
+        html += `<div class="insight-card"><div class="insight-title">Avg Steps (${recentSteps.length}d)</div>
+          <div class="insight-body"><b>${avgSteps.toLocaleString()}</b> steps/day</div></div>`;
+      }
+    }
+
+    // Recommendations
+    const recs = [];
+    if(streak === 0) recs.push('Get a workout in today to start building a streak!');
+    const recentDaily = daily.filter(d => d.energy && d.sleep).slice(-14);
+    if(recentDaily.length >= 3) {
+      const recentSleep = recentDaily.slice(-3);
+      const avgRecentSleep = recentSleep.reduce((a,d) => a+d.sleep, 0) / recentSleep.length;
+      if(avgRecentSleep < 3) recs.push('Your sleep quality has been low. Consider earlier bedtimes.');
+    }
+    const measurements = S.get('measurements', []).filter(m => m.weight);
+    if(measurements.length >= 4) {
+      const recent = measurements.slice(-4);
+      const trend = recent[recent.length-1].weight - recent[0].weight;
+      if(Math.abs(trend) < 0.3) recs.push('Weight stable — adjust calories if you have a goal.');
+    }
+    if(!recs.length) recs.push('Keep it up! Consistency is key.');
+    html += `<div class="insight-card"><div class="insight-title">Tips</div>
+      <div class="insight-body">${recs.map(r => `<div style="margin:4px 0">• ${r}</div>`).join('')}</div></div>`;
+
+    el.innerHTML = html;
   },
 
   setRating(key, val) {
@@ -652,10 +822,40 @@ const T = {
     entry[key] = entry[key] === val ? 0 : val;
     this.saveDaily(entry);
     this.render();
+  }
+};
+
+/* ══════════════════════════════════════════
+   FOOD MODULE (F)
+   ══════════════════════════════════════════ */
+const F = {
+  searchTimeout: null,
+  _lastResults: [],
+  _scannerStream: null,
+  _scannerInterval: null,
+
+  render() {
+    this.renderRecents();
+    this.renderFoodLog();
   },
 
-  // ── Food search (OpenFoodFacts) ──
-  searchTimeout: null,
+  renderFoodLog() {
+    const entry = T.getDaily(T.viewDate);
+    const logList = document.getElementById('food-log-list');
+    if(entry.foods.length === 0) {
+      logList.innerHTML = '<div class="muted small">No food logged</div>';
+    } else {
+      logList.innerHTML = entry.foods.map((f,i) =>
+        `<div class="food-item">
+          <div><span class="small">${f.time||''}</span> ${f.name} <span class="muted">${f.cal} cal</span></div>
+          <button class="btn-icon" onclick="F.removeFood(${i})">&times;</button>
+        </div>`
+      ).join('');
+    }
+    const totalCal = entry.foods.reduce((a,f) => a+f.cal, 0);
+    document.getElementById('food-total-cal').textContent = totalCal + ' cal';
+  },
+
   initSearch() {
     const input = document.getElementById('food-search');
     if(!input) return;
@@ -667,11 +867,13 @@ const T = {
       this.searchTimeout = setTimeout(() => this.doSearch(q), 400);
     };
   },
+
   clearSearch() {
     document.getElementById('food-search').value = '';
     document.getElementById('food-search-clear').classList.add('hidden');
     document.getElementById('search-results').innerHTML = '';
   },
+
   async doSearch(query) {
     const el = document.getElementById('search-results');
     el.innerHTML = '<div class="search-loading">Searching...</div>';
@@ -690,7 +892,7 @@ const T = {
         const brand = p.brands || '';
         const qty = p.quantity || '';
         const per100 = p.nutriments['energy-kcal_100g'] ? ' /100g' : '';
-        return `<div class="search-item" onclick="T.addSearchResult(${i})">
+        return `<div class="search-item" onclick="F.addSearchResult(${i})">
           <div class="search-item-info">
             <div class="search-item-name">${name}</div>
             <div class="search-item-meta">${brand}${qty ? ' · '+qty : ''}</div>
@@ -703,7 +905,7 @@ const T = {
       el.innerHTML = '<div class="muted small" style="padding:8px">Search failed. Check your connection.</div>';
     }
   },
-  _lastResults: [],
+
   addSearchResult(idx) {
     const p = this._lastResults[idx];
     if(!p) return;
@@ -727,15 +929,14 @@ const T = {
       <div class="spacer"></div>
       <div class="row">
         <input id="manual-barcode" inputmode="numeric" placeholder="Or type barcode number" style="flex:1">
-        <button class="btn btn-primary btn-sm" onclick="T.lookupBarcode(document.getElementById('manual-barcode').value)">Look up</button>
+        <button class="btn btn-primary btn-sm" onclick="F.lookupBarcode(document.getElementById('manual-barcode').value)">Look up</button>
       </div>
       <div class="spacer"></div>
-      <button class="btn btn-secondary btn-block btn-sm" onclick="T.stopScanner();closeModalForce()">Cancel</button>
+      <button class="btn btn-secondary btn-block btn-sm" onclick="F.stopScanner();closeModalForce()">Cancel</button>
     `);
     if(hasBarcodeDetector) this.startScanner();
   },
-  _scannerStream: null,
-  _scannerInterval: null,
+
   async startScanner() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:640},height:{ideal:480}}});
@@ -761,6 +962,7 @@ const T = {
       document.getElementById('scanner-status').textContent = 'Camera access denied. Enter barcode manually.';
     }
   },
+
   stopScanner() {
     clearInterval(this._scannerInterval);
     if(this._scannerStream) {
@@ -768,6 +970,7 @@ const T = {
       this._scannerStream = null;
     }
   },
+
   async lookupBarcode(code) {
     code = (code||'').trim();
     if(!code) return;
@@ -805,7 +1008,6 @@ const T = {
     } else {
       recents.push({name, cal, count:1, lastUsed: Date.now()});
     }
-    // Keep top 20 by frequency, break ties by recency
     recents.sort((a,b) => b.count - a.count || b.lastUsed - a.lastUsed);
     S.set('foodRecents', recents.slice(0, 20));
   },
@@ -817,7 +1019,7 @@ const T = {
       return;
     }
     el.innerHTML = recents.map(r =>
-      `<button class="recent-chip" onclick="T.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal})">
+      `<button class="recent-chip" onclick="F.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal})">
         ${r.name.length > 20 ? r.name.slice(0,18)+'...' : r.name} <span class="rc-cal">${r.cal}</span>
       </button>`
     ).join('');
@@ -825,18 +1027,18 @@ const T = {
 
   // ── Core food methods ──
   addFood(name, cal) {
-    const entry = this.getDaily(this.viewDate);
+    const entry = T.getDaily(T.viewDate);
     const now = new Date();
     entry.foods.push({name, cal, time: now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')});
-    this.saveDaily(entry);
+    T.saveDaily(entry);
     this.trackRecent(name, cal);
     this.render();
   },
 
   removeFood(idx) {
-    const entry = this.getDaily(this.viewDate);
+    const entry = T.getDaily(T.viewDate);
     entry.foods.splice(idx, 1);
-    this.saveDaily(entry);
+    T.saveDaily(entry);
     this.render();
   },
 
@@ -846,7 +1048,7 @@ const T = {
       <div class="col">
         <input id="cf-name" placeholder="Food name">
         <input id="cf-cal" inputmode="numeric" placeholder="Calories">
-        <button class="btn btn-primary" onclick="T.addCustomFood()">Add</button>
+        <button class="btn btn-primary" onclick="F.addCustomFood()">Add</button>
       </div>
     `);
   },
@@ -1056,7 +1258,6 @@ const M = {
       document.getElementById('bodyfat-input').value = latest.bodyFat || '';
     }
 
-    // History
     const hist = measurements.slice().reverse().slice(0, 15);
     document.getElementById('measurement-history').innerHTML = hist.length ?
       hist.map(m => {
@@ -1067,7 +1268,6 @@ const M = {
         return `<div class="hist-item"><span class="hist-date">${fmtDate(m.date)}</span><div class="hist-detail">${detail}</div></div>`;
       }).join('') : '<span class="muted">No measurements yet</span>';
 
-    // Mini chart
     this.renderWeightChart();
   },
 
@@ -1129,11 +1329,10 @@ const M = {
 };
 
 /* ══════════════════════════════════════════
-   IMPORT MODULE (I)
+   IMPORT/SYNC MODULE (I)
    ══════════════════════════════════════════ */
 const I = {
   render() {
-    // Last sync info
     const health = S.get('healthImport', null);
     const syncEl = document.getElementById('last-sync');
     if(syncEl) {
@@ -1146,49 +1345,6 @@ const I = {
       }
     }
 
-    // Today's data display
-    const todayEl = document.getElementById('health-today-display');
-    if(todayEl) {
-      const today = S.today();
-      const h = health || {steps:[], heartRate:[], sleep:[], activeCal:[]};
-      const todaySteps = (h.steps||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0);
-      const todayHR = (h.heartRate||[]).filter(r => r.date === today);
-      const avgHR = todayHR.length ? Math.round(todayHR.reduce((a,r) => a+r.value, 0) / todayHR.length) : 0;
-      const todaySleep = (h.sleep||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0);
-      const todayCal = (h.activeCal||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0);
-
-      const val = (field) => {
-        const arr = h[field] || [];
-        const todayVals = arr.filter(r => r.date === today);
-        return todayVals.length ? todayVals.reduce((a,r) => a + r.value, 0) : null;
-      };
-      const last = (field) => {
-        const arr = h[field] || [];
-        return arr.length ? arr[arr.length-1].value : null;
-      };
-
-      const row = (label, value, unit='', color='') =>
-        `<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #1e293b">
-          <span style="font-size:15px">${label}</span>
-          <b style="font-size:15px;${color ? 'color:'+color : ''}">${value}${unit ? ' <span style="font-weight:400;color:#64748b;font-size:13px">'+unit+'</span>' : ''}</b>
-        </div>`;
-
-      const items = [];
-      const steps = val('steps'); if(steps) items.push(row('Steps', steps.toLocaleString()));
-      const aCal = val('activeCal'); if(aCal) items.push(row('Active Calories', Math.round(aCal), 'kcal'));
-      const rCal = val('restingEnergy'); if(rCal) items.push(row('Resting Energy', Math.round(rCal), 'kcal'));
-      const exMins = val('exerciseMins'); if(exMins) items.push(row('Exercise', Math.round(exMins), 'min', '#10b981'));
-      const dist = val('distance'); if(dist) items.push(row('Distance', dist.toFixed(1), 'km'));
-      const standH = val('standHours'); if(standH) items.push(row('Stand Hours', Math.round(standH), 'hrs'));
-      const rHR = last('restingHR'); if(rHR) items.push(row('Resting HR', Math.round(rHR), 'bpm', rHR < 60 ? '#10b981' : rHR > 80 ? '#ef4444' : ''));
-      const hrv = last('hrv'); if(hrv) items.push(row('HRV', Math.round(hrv), 'ms', hrv > 40 ? '#10b981' : hrv < 20 ? '#ef4444' : '#f59e0b'));
-      const vo2 = last('vo2max'); if(vo2) items.push(row('VO2 Max', (Math.round(vo2*10)/10).toString(), 'ml/kg/min'));
-      const slp = val('sleep'); if(slp) items.push(row('Sleep', (Math.round(slp*10)/10).toString(), 'hrs', slp >= 7 ? '#10b981' : slp < 6 ? '#ef4444' : '#f59e0b'));
-      const wt = last('weight'); if(wt) items.push(row('Weight', (Math.round(wt*10)/10).toString(), 'kg'));
-
-      todayEl.innerHTML = items.length ? items.join('') : '<div class="muted">No health data for today. Sync from Apple Health or enter manually.</div>';
-    }
-
     // Sync history
     const histEl = document.getElementById('import-history');
     if(histEl && health && health.syncLog) {
@@ -1199,17 +1355,14 @@ const I = {
     }
   },
 
-  // Handle URL-based import from iOS Shortcut
   handleURLImport() {
     const params = new URLSearchParams(window.location.search);
     const importData = params.get('import');
     if(!importData) return false;
-
     try {
       const json = decodeURIComponent(atob(importData));
       const data = JSON.parse(json);
       this.processImport(data);
-      // Clean URL without reload
       window.history.replaceState({}, '', window.location.pathname);
       return true;
     } catch(e) {
@@ -1220,19 +1373,17 @@ const I = {
 
   processImport(data) {
     const today = data.date || S.today();
-    const health = S.get('healthImport', {steps:[], heartRate:[], sleep:[], activeCal:[], weight:[], restingHR:[], hrv:[], vo2max:[], exerciseMins:[], distance:[], standHours:[], restingEnergy:[], syncLog:[], lastImport:null});
+    const health = S.get('healthImport', {steps:[], heartRate:[], sleep:[], activeCal:[], weight:[], restingHR:[], hrv:[], vo2max:[], exerciseMins:[], distance:[], standHours:[], restingEnergy:[], standMins:[], syncLog:[], lastImport:null});
 
-    // All supported fields
-    const allFields = ['steps','heartRate','sleep','activeCal','weight','restingHR','hrv','vo2max','exerciseMins','distance','standHours','restingEnergy'];
+    const allFields = ['steps','heartRate','sleep','activeCal','weight','restingHR','hrv','vo2max','exerciseMins','distance','standHours','restingEnergy','standMins'];
     allFields.forEach(f => {
       if(!health[f]) health[f] = [];
       health[f] = health[f].filter(r => r.date !== today);
     });
 
-    // Add new data
     const fieldMap = {steps:'steps', heartRate:'heartRate', sleep:'sleep', activeCal:'activeCal',
       weight:'weight', restingHR:'restingHR', hrv:'hrv', vo2max:'vo2max',
-      exerciseMins:'exerciseMins', distance:'distance', standHours:'standHours', restingEnergy:'restingEnergy'};
+      exerciseMins:'exerciseMins', distance:'distance', standHours:'standHours', restingEnergy:'restingEnergy', standMins:'standMins'};
     for(const [key, field] of Object.entries(fieldMap)) {
       if(data[key] !== undefined && data[key] !== null && data[key] !== '') {
         const val = parseFloat(data[key]);
@@ -1262,6 +1413,8 @@ const I = {
     if(data.restingHR) parts.push(`${Math.round(data.restingHR)} rHR`);
     if(data.hrv) parts.push(`${Math.round(data.hrv)}ms HRV`);
     if(data.weight) parts.push(`${(Math.round(data.weight*10)/10)}kg`);
+    if(data.exerciseMins) parts.push(`${Math.round(data.exerciseMins)}m exercise`);
+    if(data.distance) parts.push(`${(Math.round(data.distance*10)/10)}km`);
     health.syncLog.push({date: today, summary: parts.join(' | ') || 'Synced'});
     if(health.syncLog.length > 30) health.syncLog = health.syncLog.slice(-30);
 
@@ -1269,7 +1422,6 @@ const I = {
     S.set('healthImport', health);
   },
 
-  // Clipboard paste import
   async pasteFromClipboard() {
     try {
       const text = await navigator.clipboard.readText();
@@ -1284,207 +1436,358 @@ const I = {
     }
   },
 
-  showShortcutGuide() {
-    const appURL = window.location.origin + window.location.pathname;
-    showModal(`
-      <h3>Health Sync Shortcuts</h3>
-
-      <div style="background:#0f172a;border-radius:14px;padding:18px;margin-bottom:14px">
-        <p style="font-size:15px;font-weight:700;color:#3b82f6;margin-bottom:12px">Daily Health Sync</p>
-        <p style="font-size:14px;line-height:1.6;margin-bottom:14px">Syncs steps, calories, sleep, heart rate, HRV, VO2 Max, and more from your Apple Watch.</p>
-
-        <p style="font-size:13px;font-weight:700;color:#94a3b8;margin-bottom:8px">Open Shortcuts app &rarr; tap + &rarr; add these actions:</p>
-
-        <div style="background:#1e293b;border-radius:10px;padding:14px;font-size:14px;line-height:2">
-          <div style="color:#3b82f6;font-weight:700">Step 1: Get the data</div>
-          Add a <b>Text</b> action and type exactly:<br>
-          <div style="background:#0f172a;border-radius:8px;padding:10px;margin:6px 0;font-family:monospace;font-size:12px;word-break:break-all;color:#60a5fa;line-height:1.4">
-{"steps":"<span style="color:#f59e0b">ShortcutInput</span>","activeCal":"<span style="color:#f59e0b">ShortcutInput</span>","restingEnergy":"<span style="color:#f59e0b">ShortcutInput</span>","exerciseMins":"<span style="color:#f59e0b">ShortcutInput</span>","distance":"<span style="color:#f59e0b">ShortcutInput</span>","restingHR":"<span style="color:#f59e0b">ShortcutInput</span>","hrv":"<span style="color:#f59e0b">ShortcutInput</span>","vo2max":"<span style="color:#f59e0b">ShortcutInput</span>","sleep":"<span style="color:#f59e0b">ShortcutInput</span>","weight":"<span style="color:#f59e0b">ShortcutInput</span>","standHours":"<span style="color:#f59e0b">ShortcutInput</span>"}
-          </div>
-          <p style="font-size:12px;color:#64748b;margin:4px 0 8px">Replace each <span style="color:#f59e0b">ShortcutInput</span> by tapping it and selecting the magic variable from a Health Sample query above it.</p>
-
-          <div style="color:#64748b;font-size:12px;margin-top:4px">Actually, the easier way:</div>
-        </div>
-
-        <div style="background:#1e293b;border-radius:10px;padding:14px;margin-top:8px;font-size:14px;line-height:1.8">
-          <div style="color:#10b981;font-weight:700;margin-bottom:6px">Easier method (recommended):</div>
-          <ol style="padding-left:20px;font-size:14px;line-height:2.2">
-            <li>Search for <b>"Find Health Samples"</b></li>
-            <li>Set Type = <b>Step Count</b>, Period = <b>Today</b></li>
-            <li>Add another <b>"Find Health Samples"</b></li>
-            <li>Set Type = <b>Active Energy</b>, Period = <b>Today</b></li>
-            <li>Repeat for: <b>Resting Energy</b>, <b>Exercise Minutes</b>, <b>Walking+Running Distance</b>, <b>Resting Heart Rate</b> (1 sample), <b>Heart Rate Variability</b> (1 sample), <b>VO2 Max</b> (1 sample), <b>Sleep Analysis</b> (Today), <b>Stand Hours</b> (Today), <b>Weight</b> (1 sample)</li>
-            <li>Add <b>"Dictionary"</b> action with these keys:<br>
-              <span style="color:#60a5fa;font-size:13px">steps, activeCal, restingEnergy, exerciseMins, distance, restingHR, hrv, vo2max, sleep, standHours, weight</span><br>
-              Set each value to the matching Health Sample variable above</li>
-            <li>Add <b>"Base64 Encode"</b> (input: Dictionary)</li>
-            <li>Add <b>"Open URL"</b>:<br>
-              <span style="word-break:break-all;color:#60a5fa;font-size:13px">${appURL}?import=</span> then tap and insert the Base64 result</li>
-          </ol>
-        </div>
-
-        <p style="font-size:13px;color:#64748b;margin-top:10px">
-          <b>Automate it:</b> Shortcuts &rarr; Automation tab &rarr; + &rarr; Time of Day &rarr; choose morning time &rarr; run this shortcut. Your data syncs every day automatically.
-        </p>
-      </div>
-
-      <div style="background:#0f172a;border-radius:14px;padding:18px;margin-bottom:14px">
-        <p style="font-size:15px;font-weight:700;color:#10b981;margin-bottom:8px">Quick Alternative: Clipboard Paste</p>
-        <p style="font-size:14px;line-height:1.6">Build the same shortcut but use <b>"Copy to Clipboard"</b> instead of "Open URL" at the end. Then tap the paste button below after running it.</p>
-      </div>
-
-      <button class="btn btn-primary btn-block" onclick="I.pasteFromClipboard();closeModalForce()">Paste Health Data from Clipboard</button>
-      <div class="spacer"></div>
-      <button class="btn btn-secondary btn-block" onclick="I.copyTestURL()">Test with Sample Data</button>
-      <div class="spacer"></div>
-      <button class="btn btn-secondary btn-block" onclick="closeModalForce()">Close</button>
-    `);
-  },
-
-  copyTestURL() {
-    const testData = {steps:8432, weight:82.5, restingHR:58, hrv:42, vo2max:38.5, sleep:7.2, activeCal:340, restingEnergy:1850, exerciseMins:35, distance:5.8, standHours:10};
-    const encoded = btoa(encodeURIComponent(JSON.stringify(testData)));
-    const url = window.location.origin + window.location.pathname + '?import=' + encoded;
-    navigator.clipboard.writeText(url).then(() => {
-      showModal(`<h3>Test URL Copied!</h3>
-        <p style="font-size:15px;line-height:1.6">Paste this URL in Safari to test the import with sample Apple Watch data.</p>
-        <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
-    }).catch(() => {
-      showModal(`<h3>Test URL</h3>
-        <p style="font-size:14px;margin-bottom:10px">Copy this URL and open in Safari:</p>
-        <textarea style="font-size:12px;height:100px" readonly onclick="this.select()">${url}</textarea>
-        <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">Close</button>`);
-    });
-  },
-
   saveManual() {
-    const steps = parseInt(document.getElementById('manual-steps').value);
-    const hr = parseInt(document.getElementById('manual-hr').value);
-    const sleep = parseFloat(document.getElementById('manual-sleep').value);
-    const activeCal = parseInt(document.getElementById('manual-active-cal').value);
     const data = {};
-    if(steps) data.steps = steps;
-    if(hr) data.heartRate = hr;
-    if(sleep) data.sleep = sleep;
-    if(activeCal) data.activeCal = activeCal;
+    const steps = document.getElementById('manual-steps').value;
+    const hr = document.getElementById('manual-hr').value;
+    const sleep = document.getElementById('manual-sleep').value;
+    const cal = document.getElementById('manual-active-cal').value;
+    if(steps) data.steps = parseFloat(steps);
+    if(hr) data.restingHR = parseFloat(hr);
+    if(sleep) data.sleep = parseFloat(sleep);
+    if(cal) data.activeCal = parseFloat(cal);
     if(Object.keys(data).length === 0) return;
     this.processImport(data);
+    this.render();
     document.getElementById('manual-steps').value = '';
     document.getElementById('manual-hr').value = '';
     document.getElementById('manual-sleep').value = '';
     document.getElementById('manual-active-cal').value = '';
-    this.render();
+    showModal(`<h3>Saved!</h3><p style="font-size:15px">Manual health data saved.</p>
+      <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
   }
 };
 
 /* ══════════════════════════════════════════
-   ANALYSIS MODULE (A)
+   COACH MODULE — AI-driven recommendations
    ══════════════════════════════════════════ */
-const A = {
+const Coach = {
   render() {
-    const el = document.getElementById('analysis-content');
+    const el = document.getElementById('coach-content');
+    const health = S.get('healthImport', null);
+    const workouts = S.get('workouts', []);
+    const daily = S.get('daily', []);
+    const exercises = S.get('exercises', []);
+    const measurements = S.get('measurements', []);
+    const today = S.today();
+
     let html = '';
 
-    // Daily summary
-    const daily = S.get('daily', []);
-    const todayEntry = daily.find(d => d.date === S.today());
-    const workouts = S.get('workouts', []);
-    const todayWorkout = workouts.find(w => w.date === S.today());
+    // ── Today's Status Overview ──
+    html += '<div class="card"><h3>Status</h3>';
+    const todayEntry = daily.find(d => d.date === today);
+    const todayWorkout = workouts.find(w => w.date === today);
+    const todayCal = todayEntry ? todayEntry.foods.reduce((a,f) => a+f.cal, 0) : 0;
+    const todaySteps = health ? (health.steps||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0) : 0;
+    const todayActiveCal = health ? (health.activeCal||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0) : 0;
 
-    html += '<div class="card"><h3>Today</h3>';
-    if(todayEntry && (todayEntry.energy || todayEntry.foods.length)) {
-      const cal = todayEntry.foods.reduce((a,f) => a+f.cal, 0);
-      html += `<div>Calories: <b>${cal}</b></div>`;
-      if(todayEntry.energy) html += `<div>Energy: <b>${todayEntry.energy}/5</b></div>`;
-      if(todayEntry.sleep) html += `<div>Sleep: <b>${todayEntry.sleep}/5</b></div>`;
-    } else {
-      html += '<div class="muted">No data logged today</div>';
-    }
+    const statusItems = [];
     if(todayWorkout) {
-      const totalSets = todayWorkout.exercises.reduce((a,e) => a+e.sets.length, 0);
       const totalVol = todayWorkout.exercises.reduce((a,e) => a+e.sets.reduce((b,s) => b+s.weight*s.reps, 0), 0);
-      html += `<div>Workout: <b>${todayWorkout.exercises.length}</b> exercises, <b>${totalSets}</b> sets, <b>${Math.round(totalVol)}</b>kg volume</div>`;
+      statusItems.push(`<div style="color:#10b981">Trained today — ${todayWorkout.exercises.length} exercises, ${Math.round(totalVol)}kg volume</div>`);
+    } else {
+      statusItems.push(`<div style="color:#f59e0b">No workout logged today</div>`);
     }
+    if(todayCal > 0) statusItems.push(`<div>Food logged: <b>${todayCal}</b> cal</div>`);
+    if(todaySteps > 0) statusItems.push(`<div>Steps: <b>${Math.round(todaySteps).toLocaleString()}</b></div>`);
+    if(todayActiveCal > 0) statusItems.push(`<div>Active calories burned: <b>${Math.round(todayActiveCal)}</b> kcal</div>`);
+    html += statusItems.join('') + '</div>';
+
+    // ── Exercise Recommendations ──
+    html += '<div class="card"><h3>Workout Suggestions</h3>';
+    const workoutRecs = this.getWorkoutRecs(workouts, exercises, todayEntry);
+    html += workoutRecs.map(r =>
+      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
+    ).join('');
     html += '</div>';
 
-    // Workout streak
-    const sortedWorkouts = workouts.slice().sort((a,b) => b.date.localeCompare(a.date));
-    let streak = 0;
-    let checkDate = S.today();
-    for(let i = 0; i < 60; i++) {
-      if(sortedWorkouts.find(w => w.date === checkDate)) {
-        streak++;
-        checkDate = addDays(checkDate, -1);
-      } else if(i === 0) {
-        checkDate = addDays(checkDate, -1);
-        continue;
-      } else {
-        break;
-      }
-    }
+    // ── Nutrition Coaching ──
+    html += '<div class="card"><h3>Nutrition</h3>';
+    const nutritionRecs = this.getNutritionRecs(daily, health, todayCal, todayActiveCal);
+    html += nutritionRecs.map(r =>
+      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
+    ).join('');
+    html += '</div>';
 
-    // Weekly comparison
-    const thisWeekStart = weekStart(S.today());
-    const lastWeekStart = addDays(thisWeekStart, -7);
-    const thisWeekWorkouts = workouts.filter(w => w.date >= thisWeekStart);
-    const lastWeekWorkouts = workouts.filter(w => w.date >= lastWeekStart && w.date < thisWeekStart);
-    const thisWeekVol = thisWeekWorkouts.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
-    const lastWeekVol = lastWeekWorkouts.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+    // ── Recovery & Wellness ──
+    html += '<div class="card"><h3>Recovery</h3>';
+    const recoveryRecs = this.getRecoveryRecs(health, daily, workouts);
+    html += recoveryRecs.map(r =>
+      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
+    ).join('');
+    html += '</div>';
 
-    html += '<div class="card"><h3>Insights</h3>';
-
-    if(streak > 0) {
-      html += `<div class="insight-card"><div class="insight-title">Workout Streak</div>
-        <div class="insight-body"><span class="streak-badge">🔥 ${streak} day${streak>1?'s':''}</span></div></div>`;
-    }
-
-    if(lastWeekVol > 0 && thisWeekVol > 0) {
-      const change = ((thisWeekVol - lastWeekVol) / lastWeekVol * 100).toFixed(0);
-      const dir = change > 0 ? 'up' : change < 0 ? 'down' : 'same';
-      const badge = dir === 'up' ? 'badge-green' : dir === 'down' ? 'badge-red' : '';
-      html += `<div class="insight-card"><div class="insight-title">Weekly Volume</div>
-        <div class="insight-body">This week: <b>${Math.round(thisWeekVol)}</b>kg vs last week: <b>${Math.round(lastWeekVol)}</b>kg
-        <span class="${badge} badge">${change>0?'+':''}${change}%</span></div></div>`;
-    }
-
-    // Sleep/energy correlation
-    const recentDaily = daily.filter(d => d.energy && d.sleep).slice(-14);
-    if(recentDaily.length >= 5) {
-      const avgEnergy = recentDaily.reduce((a,d) => a+d.energy, 0) / recentDaily.length;
-      const avgSleep = recentDaily.reduce((a,d) => a+d.sleep, 0) / recentDaily.length;
-      html += `<div class="insight-card"><div class="insight-title">Wellness (last ${recentDaily.length} days)</div>
-        <div class="insight-body">Avg Energy: <b>${avgEnergy.toFixed(1)}/5</b> | Avg Sleep: <b>${avgSleep.toFixed(1)}/5</b></div></div>`;
-    }
-
-    // PR check
-    const exercises = S.get('exercises', []);
-    const recentPRs = exercises.filter(e => e.pr && e.pr.date && daysBetween(e.pr.date, S.today()) <= 7);
-    if(recentPRs.length) {
-      html += `<div class="insight-card"><div class="insight-title">Recent PRs 🏆</div>
-        <div class="insight-body">${recentPRs.map(e => `<div>${e.name}: ${e.pr.weight}kg x ${e.pr.reps}</div>`).join('')}</div></div>`;
-    }
-
-    // Recommendations
-    html += '<div class="insight-card"><div class="insight-title">Recommendations</div><div class="insight-body">';
-    const recs = [];
-    if(streak === 0) recs.push('Get a workout in today to start building a streak!');
-    if(recentDaily.length >= 3) {
-      const recentSleep = recentDaily.slice(-3);
-      const avgRecentSleep = recentSleep.reduce((a,d) => a+d.sleep, 0) / recentSleep.length;
-      if(avgRecentSleep < 3) recs.push('Your sleep quality has been low lately. Consider earlier bedtimes or reducing screen time.');
-    }
-    const measurements = S.get('measurements', []).filter(m => m.weight);
-    if(measurements.length >= 4) {
-      const recent = measurements.slice(-4);
-      const trend = recent[recent.length-1].weight - recent[0].weight;
-      if(Math.abs(trend) < 0.3) recs.push('Weight has been stable — if you have a goal, consider adjusting calories.');
-    }
-    if(!recs.length) recs.push('Keep it up! Consistency is key.');
-    html += recs.map(r => `<div style="margin:4px 0">• ${r}</div>`).join('');
-    html += '</div></div>';
+    // ── Focus Areas ──
+    html += '<div class="card"><h3>Focus Areas</h3>';
+    const focusRecs = this.getFocusAreas(workouts, exercises, measurements, health);
+    html += focusRecs.map(r =>
+      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
+    ).join('');
     html += '</div>';
 
     el.innerHTML = html;
+  },
+
+  getWorkoutRecs(workouts, exercises, todayEntry) {
+    const recs = [];
+    const today = S.today();
+    const recent7 = workouts.filter(w => daysBetween(w.date, today) <= 7);
+    const recent14 = workouts.filter(w => daysBetween(w.date, today) <= 14);
+
+    // What muscle groups were trained recently?
+    const recentMuscles = {};
+    recent7.forEach(w => {
+      w.exercises.forEach(e => {
+        const exDef = exercises.find(x => x.name === e.name);
+        if(exDef && exDef.muscles) exDef.muscles.forEach(m => { recentMuscles[m] = (recentMuscles[m]||0) + 1; });
+      });
+    });
+
+    // Which categories were trained?
+    const recentCats = {};
+    recent7.forEach(w => {
+      w.exercises.forEach(e => {
+        const exDef = exercises.find(x => x.name === e.name);
+        if(exDef) recentCats[exDef.cat] = (recentCats[exDef.cat]||0) + 1;
+      });
+    });
+
+    // Suggest underworked categories
+    const allCats = {push:'Push (Chest/Shoulders/Triceps)', pull:'Pull (Back/Biceps)', legs:'Legs', core:'Core'};
+    const neglected = Object.entries(allCats).filter(([cat]) => !recentCats[cat] || recentCats[cat] < 1);
+    if(neglected.length) {
+      const neglectedExercises = neglected.map(([cat, label]) => {
+        const catExs = exercises.filter(e => e.cat === cat).slice(0, 2).map(e => e.name);
+        return `<div style="margin:4px 0">• <b>${label}</b> — try ${catExs.join(', ')}</div>`;
+      }).join('');
+      recs.push({title:'Muscles to Hit This Week', body: neglectedExercises});
+    }
+
+    // Progressive overload check
+    const staleExercises = [];
+    exercises.forEach(ex => {
+      if(!ex.lastWeight || !ex.pr) return;
+      if(ex.pr.date && daysBetween(ex.pr.date, today) > 21) {
+        staleExercises.push(ex.name);
+      }
+    });
+    if(staleExercises.length) {
+      recs.push({
+        title:'Time to Push Harder',
+        body: `No PR in 3+ weeks on: <b>${staleExercises.slice(0,4).join(', ')}</b>. Try adding 2.5kg or 1-2 extra reps next session.`
+      });
+    }
+
+    // Volume trend
+    const thisWeekVol = recent7.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+    const lastWeek = workouts.filter(w => daysBetween(w.date, today) > 7 && daysBetween(w.date, today) <= 14);
+    const lastWeekVol = lastWeek.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+
+    if(thisWeekVol > 0 && lastWeekVol > 0) {
+      const volChange = ((thisWeekVol - lastWeekVol) / lastWeekVol * 100);
+      if(volChange < -15) {
+        recs.push({title:'Volume Drop', body: `Weekly volume down ${Math.abs(Math.round(volChange))}% from last week (${Math.round(thisWeekVol)}kg vs ${Math.round(lastWeekVol)}kg). If intentional (deload), great. Otherwise, aim to match or exceed last week.`});
+      } else if(volChange > 20) {
+        recs.push({title:'Volume Spike', body: `Volume up ${Math.round(volChange)}% — great progress! Watch for excessive soreness and ensure adequate recovery.`});
+      }
+    }
+
+    // Workout frequency
+    if(recent7.length < 3) {
+      recs.push({title:'Frequency', body: `Only ${recent7.length} workout${recent7.length!==1?'s':''} this week. Aim for 3-5 sessions for optimal progress.`});
+    }
+
+    // Energy-based suggestion
+    if(todayEntry && todayEntry.energy) {
+      if(todayEntry.energy <= 2) {
+        recs.push({title:'Low Energy Day', body: 'Consider a lighter session — focus on mobility, stretching, or a shorter workout with lower intensity.'});
+      } else if(todayEntry.energy >= 4) {
+        recs.push({title:'High Energy!', body: 'Great day to push for PRs or tackle a challenging workout. Go heavy!'});
+      }
+    }
+
+    if(!recs.length) recs.push({title:'On Track', body: 'Your training looks balanced. Keep up the consistency!'});
+    return recs;
+  },
+
+  getNutritionRecs(daily, health, todayCal, todayActiveCal) {
+    const recs = [];
+    const today = S.today();
+
+    // Calorie trend
+    const recentDays = daily.filter(d => d.foods && d.foods.length && daysBetween(d.date, today) <= 7);
+    if(recentDays.length >= 3) {
+      const avgCal = Math.round(recentDays.reduce((a,d) => a+d.foods.reduce((b,f) => b+f.cal, 0), 0) / recentDays.length);
+      recs.push({title:'Average Intake', body: `<b>${avgCal}</b> cal/day over the last ${recentDays.length} days.`});
+
+      // Check consistency
+      const cals = recentDays.map(d => d.foods.reduce((a,f) => a+f.cal, 0));
+      const variance = cals.reduce((a,c) => a + Math.pow(c - avgCal, 2), 0) / cals.length;
+      const stdDev = Math.sqrt(variance);
+      if(stdDev > 500) {
+        recs.push({title:'Inconsistent Intake', body: `Your daily calories vary significantly (${Math.round(stdDev)} cal std dev). Try to keep intake more consistent day-to-day for better results.`});
+      }
+    }
+
+    // Energy balance
+    if(todayCal > 0 && todayActiveCal > 0) {
+      const totalBurn = todayActiveCal + 1800; // rough BMR estimate
+      const balance = todayCal - totalBurn;
+      if(balance > 300) {
+        recs.push({title:'Calorie Surplus', body: `~${Math.round(balance)} cal surplus today. Good if you're building muscle, consider reducing if cutting.`});
+      } else if(balance < -500) {
+        recs.push({title:'Large Deficit', body: `~${Math.round(Math.abs(balance))} cal deficit today. Fine for fat loss, but don't go too aggressive — you may lose muscle.`});
+      }
+    }
+
+    // Protein reminder based on meal logging patterns
+    if(todayCal > 0 && todayCal < 1500) {
+      recs.push({title:'Low Intake', body: 'Only ' + todayCal + ' cal logged so far. Make sure you\'re logging all meals. Aim for adequate protein with each meal.'});
+    }
+
+    if(!recs.length) {
+      if(todayCal === 0) {
+        recs.push({title:'No Food Logged', body: 'Log your meals in the Food tab to get personalized nutrition coaching.'});
+      } else {
+        recs.push({title:'Tracking', body: 'Keep logging consistently. More data means better recommendations.'});
+      }
+    }
+    return recs;
+  },
+
+  getRecoveryRecs(health, daily, workouts) {
+    const recs = [];
+    const today = S.today();
+
+    // HRV analysis
+    if(health && health.hrv && health.hrv.length >= 3) {
+      const recent = health.hrv.slice(-7);
+      const avgHRV = recent.reduce((a,r) => a+r.value, 0) / recent.length;
+      const todayHRV = health.hrv.filter(r => r.date === today);
+      if(todayHRV.length) {
+        const hrv = todayHRV[todayHRV.length-1].value;
+        if(hrv < avgHRV * 0.85) {
+          recs.push({title:'HRV Below Average', body: `Today's HRV (${Math.round(hrv)}ms) is ${Math.round((1-hrv/avgHRV)*100)}% below your recent average (${Math.round(avgHRV)}ms). Your body may need more recovery. Consider a lighter day.`});
+        } else if(hrv > avgHRV * 1.1) {
+          recs.push({title:'HRV Strong', body: `HRV at ${Math.round(hrv)}ms — above your ${Math.round(avgHRV)}ms average. You're well-recovered and ready to push hard!`});
+        }
+      }
+    }
+
+    // Resting HR trend
+    if(health && health.restingHR && health.restingHR.length >= 3) {
+      const recent = health.restingHR.slice(-5);
+      const avgRHR = recent.reduce((a,r) => a+r.value, 0) / recent.length;
+      if(avgRHR > 75) {
+        recs.push({title:'Elevated Resting HR', body: `Your resting HR has averaged ${Math.round(avgRHR)} bpm recently. This can indicate stress, dehydration, or overtraining. Prioritize sleep and hydration.`});
+      }
+    }
+
+    // Sleep quality from daily check-in
+    const recentSleep = daily.filter(d => d.sleep && daysBetween(d.date, today) <= 7);
+    if(recentSleep.length >= 3) {
+      const avgSleep = recentSleep.reduce((a,d) => a+d.sleep, 0) / recentSleep.length;
+      if(avgSleep < 2.5) {
+        recs.push({title:'Poor Sleep Pattern', body: `Average sleep quality ${avgSleep.toFixed(1)}/5 over the last week. Poor sleep hampers recovery and muscle growth. Try: consistent bedtime, no screens 1hr before bed, cool room.`});
+      }
+    }
+
+    // Soreness trend
+    const recentSoreness = daily.filter(d => d.soreness && daysBetween(d.date, today) <= 7);
+    if(recentSoreness.length >= 3) {
+      const avgSoreness = recentSoreness.reduce((a,d) => a+d.soreness, 0) / recentSoreness.length;
+      if(avgSoreness >= 4) {
+        recs.push({title:'High Soreness', body: 'Consistently high soreness. Take a deload week — reduce weights by 40% and volume by 50%. Your body needs it.'});
+      }
+    }
+
+    // Consecutive training days
+    const sorted = workouts.slice().sort((a,b) => b.date.localeCompare(a.date));
+    let consecutive = 0;
+    let checkDate = today;
+    for(let i = 0; i < 10; i++) {
+      if(sorted.find(w => w.date === checkDate)) { consecutive++; checkDate = addDays(checkDate, -1); }
+      else break;
+    }
+    if(consecutive >= 5) {
+      recs.push({title:'Rest Day Needed', body: `${consecutive} consecutive training days. Schedule a rest day — muscles grow during recovery, not during training.`});
+    }
+
+    // Steps / activity
+    if(health && health.steps) {
+      const recentSteps = health.steps.filter(r => daysBetween(r.date, today) <= 7);
+      if(recentSteps.length >= 3) {
+        const avgSteps = recentSteps.reduce((a,r) => a+r.value, 0) / recentSteps.length;
+        if(avgSteps < 5000) {
+          recs.push({title:'Move More', body: `Averaging ${Math.round(avgSteps).toLocaleString()} steps/day. Aim for 8,000-10,000. Low daily movement reduces overall calorie burn and recovery quality.`});
+        } else if(avgSteps > 12000) {
+          recs.push({title:'Great Activity', body: `${Math.round(avgSteps).toLocaleString()} steps/day average. Excellent daily movement.`});
+        }
+      }
+    }
+
+    if(!recs.length) recs.push({title:'Recovery', body: 'Not enough data yet. Keep syncing health data and logging how you feel for recovery insights.'});
+    return recs;
+  },
+
+  getFocusAreas(workouts, exercises, measurements, health) {
+    const recs = [];
+    const today = S.today();
+
+    // Weight trend analysis
+    const recentWeights = measurements.filter(m => m.weight).slice(-10);
+    if(recentWeights.length >= 4) {
+      const first = recentWeights[0].weight;
+      const last = recentWeights[recentWeights.length-1].weight;
+      const change = last - first;
+      const days = daysBetween(recentWeights[0].date, recentWeights[recentWeights.length-1].date) || 1;
+      const weeklyRate = (change / days) * 7;
+
+      if(Math.abs(weeklyRate) < 0.1) {
+        recs.push({title:'Weight Plateau', body: `Weight steady at ~${last.toFixed(1)}kg. If you want to change: adjust calories by 200-300/day in either direction.`});
+      } else if(weeklyRate > 0.5) {
+        recs.push({title:'Gaining', body: `Gaining ~${weeklyRate.toFixed(1)}kg/week. ${weeklyRate > 1 ? 'This is quite fast — you may be gaining excess fat. Consider reducing surplus.' : 'If bulking, this is a good rate.'}`});
+      } else if(weeklyRate < -1) {
+        recs.push({title:'Rapid Loss', body: `Losing ~${Math.abs(weeklyRate).toFixed(1)}kg/week. This is aggressive — aim for 0.5-1kg/week to preserve muscle. Increase calories slightly.`});
+      }
+    }
+
+    // Imbalance detection — push vs pull ratio
+    const last30 = workouts.filter(w => daysBetween(w.date, today) <= 30);
+    let pushCount = 0, pullCount = 0, legCount = 0, coreCount = 0;
+    last30.forEach(w => {
+      w.exercises.forEach(e => {
+        const ex = exercises.find(x => x.name === e.name);
+        if(ex) {
+          if(ex.cat === 'push') pushCount += e.sets.length;
+          if(ex.cat === 'pull') pullCount += e.sets.length;
+          if(ex.cat === 'legs') legCount += e.sets.length;
+          if(ex.cat === 'core') coreCount += e.sets.length;
+        }
+      });
+    });
+
+    if(pushCount > 0 || pullCount > 0) {
+      if(pushCount > pullCount * 1.5 && pullCount > 0) {
+        recs.push({title:'Push/Pull Imbalance', body: `${pushCount} push sets vs ${pullCount} pull sets in the last 30 days. Add more pulling work (rows, pull-ups, face pulls) to prevent shoulder issues.`});
+      }
+      if(legCount === 0 && (pushCount + pullCount) > 10) {
+        recs.push({title:'Don\'t Skip Legs', body: 'No leg work in the last 30 days. Lower body training boosts testosterone, burns more calories, and builds a balanced physique.'});
+      }
+      if(coreCount === 0 && (pushCount + pullCount + legCount) > 15) {
+        recs.push({title:'Core Work', body: 'No core training recently. A strong core improves all your lifts and prevents injury. Add 2-3 sets at the end of each session.'});
+      }
+    }
+
+    // Exercise variety
+    const uniqueExercises = new Set();
+    last30.forEach(w => w.exercises.forEach(e => uniqueExercises.add(e.name)));
+    if(uniqueExercises.size > 0 && uniqueExercises.size <= 3 && last30.length >= 4) {
+      recs.push({title:'Add Variety', body: `Only using ${uniqueExercises.size} exercise${uniqueExercises.size>1?'s':''} in the last month. Try adding new movements to target muscles from different angles and prevent plateaus.`});
+    }
+
+    if(!recs.length) recs.push({title:'Keep Going', body: 'Log more workouts and sync health data to unlock detailed focus area analysis.'});
+    return recs;
   }
 };
 
@@ -1514,6 +1817,8 @@ const C = {
     if(this.chartType === 'weight') this.renderWeight(canvas);
     else if(this.chartType === 'volume') this.renderVolume(canvas);
     else if(this.chartType === 'calories') this.renderCalories(canvas);
+    else if(this.chartType === 'steps') this.renderSteps(canvas);
+    else if(this.chartType === 'heart') this.renderHeart(canvas);
     else if(this.chartType === 'wellness') this.renderWellness(canvas);
   },
 
@@ -1526,10 +1831,7 @@ const C = {
   renderWeight(canvas) {
     const measurements = S.get('measurements', []).filter(m => m.weight);
     const data = this.filterByRange(measurements.map(m => ({x: m.date, y: m.weight})));
-    if(data.length < 2) {
-      clearCanvas(canvas, 'Need at least 2 weight entries');
-      return;
-    }
+    if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 weight entries'); return; }
     drawLineChart(canvas, data, {color:'#3b82f6', label:'kg', yPadding:2});
   },
 
@@ -1555,6 +1857,36 @@ const C = {
     data = this.filterByRange(data);
     if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 days of food data'); return; }
     drawBarChart(canvas, data, {color:'#f59e0b', label:'cal'});
+  },
+
+  renderSteps(canvas) {
+    const health = S.get('healthImport', null);
+    if(!health || !health.steps || !health.steps.length) { clearCanvas(canvas, 'No step data. Sync from Apple Health.'); return; }
+    let data = health.steps.map(r => ({x: r.date, y: Math.round(r.value)})).sort((a,b) => a.x.localeCompare(b.x));
+    data = this.filterByRange(data);
+    if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 days of step data'); return; }
+    drawBarChart(canvas, data, {color:'#3b82f6', label:'steps'});
+  },
+
+  renderHeart(canvas) {
+    const health = S.get('healthImport', null);
+    if(!health) { clearCanvas(canvas, 'No heart data. Sync from Apple Health.'); return; }
+    const series = [];
+    const rhr = (health.restingHR || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+    const hrvData = (health.hrv || []).slice().sort((a,b) => a.date.localeCompare(b.date));
+    if(rhr.length >= 2) {
+      let d = this.filterByRange(rhr.map(r => ({x: r.date, y: Math.round(r.value)})));
+      series.push({data: d, color:'#ef4444', label:'Resting HR'});
+    }
+    if(hrvData.length >= 2) {
+      let d = this.filterByRange(hrvData.map(r => ({x: r.date, y: Math.round(r.value)})));
+      series.push({data: d, color:'#10b981', label:'HRV'});
+    }
+    if(!series.length || series.every(s => s.data.length < 2)) {
+      clearCanvas(canvas, 'Need at least 2 days of heart data');
+      return;
+    }
+    drawMultiLineChart(canvas, series, {label:'bpm/ms'});
   },
 
   renderWellness(canvas) {
@@ -1601,9 +1933,7 @@ function drawLineChart(canvas, data, opts={}) {
   const yMax = Math.max(...data.map(d=>d.y)) + yPad;
   const yRange = yMax - yMin || 1;
 
-  // Grid
-  ctx.strokeStyle = '#1f2937';
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
   for(let i=0;i<=4;i++){
     const y = pad.top + ch * (1 - i/4);
     ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
@@ -1611,7 +1941,6 @@ function drawLineChart(canvas, data, opts={}) {
     ctx.fillText((yMin + yRange*i/4).toFixed(1), pad.left-6, y+4);
   }
 
-  // X labels
   ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(data.length / 5));
   data.forEach((d,i) => {
@@ -1621,10 +1950,8 @@ function drawLineChart(canvas, data, opts={}) {
     }
   });
 
-  // Line
   ctx.strokeStyle = opts.color || '#3b82f6';
-  ctx.lineWidth = 2;
-  ctx.lineJoin = 'round';
+  ctx.lineWidth = 2; ctx.lineJoin = 'round';
   ctx.beginPath();
   data.forEach((d,i) => {
     const x = pad.left + (i/(data.length-1)) * cw;
@@ -1633,7 +1960,6 @@ function drawLineChart(canvas, data, opts={}) {
   });
   ctx.stroke();
 
-  // Dots
   ctx.fillStyle = opts.color || '#3b82f6';
   data.forEach((d,i) => {
     const x = pad.left + (i/(data.length-1)) * cw;
@@ -1641,7 +1967,6 @@ function drawLineChart(canvas, data, opts={}) {
     ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
   });
 
-  // Tap handler
   canvas.onclick = (e) => {
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
@@ -1662,7 +1987,6 @@ function drawBarChart(canvas, data, opts={}) {
   const ch = h - pad.top - pad.bottom;
   const yMax = Math.max(...data.map(d=>d.y)) * 1.1 || 1;
 
-  // Grid
   ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
   for(let i=0;i<=4;i++){
     const y = pad.top + ch * (1 - i/4);
@@ -1671,7 +1995,6 @@ function drawBarChart(canvas, data, opts={}) {
     ctx.fillText(Math.round(yMax*i/4), pad.left-6, y+4);
   }
 
-  // Bars
   const barW = Math.max(4, (cw / data.length) * 0.6);
   const gap = cw / data.length;
   ctx.fillStyle = opts.color || '#10b981';
@@ -1684,7 +2007,6 @@ function drawBarChart(canvas, data, opts={}) {
     ctx.fill();
   });
 
-  // X labels
   ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(data.length / 5));
   data.forEach((d,i) => {
@@ -1715,7 +2037,6 @@ function drawMultiLineChart(canvas, series, opts={}) {
   const yMax = opts.yMax !== undefined ? opts.yMax : Math.max(...series.flatMap(s => s.data.map(d=>d.y)));
   const yRange = yMax - yMin || 1;
 
-  // Grid
   ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
   for(let i=0;i<=4;i++){
     const y = pad.top + ch * (1 - i/4);
@@ -1736,7 +2057,6 @@ function drawMultiLineChart(canvas, series, opts={}) {
     ctx.stroke();
   });
 
-  // Legend
   let lx = pad.left;
   const ly = h - 8;
   ctx.font = '11px system-ui';
@@ -1756,19 +2076,16 @@ function drawMultiLineChart(canvas, series, opts={}) {
    ══════════════════════════════════════════ */
 initExercises();
 
-// Handle URL-based health import (from iOS Shortcut)
 if(I.handleURLImport()) {
-  switchTab('import');
+  switchTab('sync');
 } else {
   T.render();
 }
-T.initSearch();
+F.initSearch();
 
 if('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').then(reg => {
-    // Check for updates every time the app is opened
     reg.update();
-    // When a new SW is waiting, activate it and reload
     reg.addEventListener('updatefound', () => {
       const newSW = reg.installing;
       newSW.addEventListener('statechange', () => {
@@ -1778,7 +2095,6 @@ if('serviceWorker' in navigator) {
   }).catch(() => {});
 }
 
-// Request notification permission for rest timer
 if('Notification' in window && Notification.permission === 'default') {
   document.addEventListener('click', function once() {
     Notification.requestPermission();
