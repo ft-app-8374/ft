@@ -755,8 +755,13 @@ const T = {
     const wt = last('weight');
     if(wt !== null) metrics.push({label:'Weight', value: (Math.round(wt*10)/10).toString(), unit:'kg', color:'#64748b'});
 
+    // Calories consumed from food log
+    const entry = this.getDaily(date);
+    const foodCal = entry.foods.reduce((a,f) => a+f.cal, 0);
+    if(foodCal > 0) metrics.push({label:'Eaten', value: foodCal.toLocaleString(), unit:'kcal', color:'#fb923c'});
+
     if(!metrics.length) {
-      grid.innerHTML = '<div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No health data for this date.</div>';
+      grid.innerHTML = '<div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No data for this date. Sync health or log food.</div>';
       return;
     }
 
