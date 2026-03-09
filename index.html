@@ -342,6 +342,11 @@ textarea{resize:vertical;min-height:80px}
     <div id="workout-today-summary">No exercises logged yet</div>
   </div>
 
+  <div class="card" id="watch-activity-card" style="display:none">
+    <h3>⌚ Watch Activity</h3>
+    <div id="watch-activity-list"></div>
+  </div>
+
   <div class="card">
     <h3>Recent Workouts</h3>
     <div id="workout-history"></div>
@@ -513,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 24;
+const APP_VERSION = 25;
 
 /* ── Storage helpers ── */
 const S = {
@@ -684,7 +689,7 @@ const T = {
 
     // Summary
     const totalCal = entry.foods.reduce((a,f) => a+f.cal, 0);
-    const workouts = S.get('workouts', []).filter(w => w.date === d);
+    const workouts = S.get('workouts', []).filter(w => w.date === d && w.source !== 'watch');
     let summary = '';
     if(entry.energy) summary += `Energy: ${emojiSets.energy[entry.energy-1]} `;
     if(entry.sleep) summary += `Sleep: ${emojiSets.sleep[entry.sleep-1]} `;
@@ -807,11 +812,12 @@ const T = {
   renderInsights() {
     const el = document.getElementById('insights-content');
     let html = '';
-    const workouts = S.get('workouts', []);
+    const allWorkouts = S.get('workouts', []);
+    const workouts = allWorkouts.filter(w => w.source !== 'watch');
     const daily = S.get('daily', []);
 
-    // Workout streak
-    const sortedWorkouts = workouts.slice().sort((a,b) => b.date.localeCompare(a.date));
+    // Workout streak (count all activity including watch)
+    const sortedWorkouts = allWorkouts.slice().sort((a,b) => b.date.localeCompare(a.date));
     let streak = 0;
     let checkDate = S.today();
     for(let i = 0; i < 60; i++) {
@@ -1359,7 +1365,7 @@ const W = {
   // ── Workout Generation ──
   generateWorkout(mins) {
     const exercises = S.get('exercises', []);
-    const workouts = S.get('workouts', []);
+    const workouts = S.get('workouts', []).filter(w => w.source !== 'watch');
     const today = S.today();
     const daily = S.get('daily', []);
     const todayEntry = daily.find(d => d.date === today);
@@ -1662,41 +1668,68 @@ const W = {
   },
 
   renderTodaySummary() {
-    const workouts = S.get('workouts', []).filter(w => w.date === S.today());
-    if(!workouts.length) {
+    const allWorkouts = S.get('workouts', []).filter(w => w.date === S.today());
+    const manual = allWorkouts.filter(w => w.source !== 'watch');
+    const watch = allWorkouts.filter(w => w.source === 'watch');
+
+    // Manual workout log (source of truth)
+    if(!manual.length || !manual.some(w => w.exercises.length)) {
       document.getElementById('workout-today-summary').innerHTML = '<span class="muted">No exercises logged yet</span>';
-      return;
-    }
-    let html = '';
-    workouts.forEach(w => {
-      w.exercises.forEach(e => {
-        if(w.source === 'watch') {
-          html += `<div class="hist-item"><b>⌚ ${e.name}</b><br><span class="small muted">${e.duration||0}min · ${e.cal||0} cal${e.startTime ? ' · '+e.startTime : ''}</span></div>`;
-        } else {
+    } else {
+      let html = '';
+      manual.forEach(w => {
+        w.exercises.forEach(e => {
           const setsStr = e.sets.map(s => `${s.weight}kg x ${s.reps}`).join(', ');
           html += `<div class="hist-item"><b>${e.name}</b><br><span class="small muted">${setsStr}</span></div>`;
-        }
+        });
       });
-    });
-    document.getElementById('workout-today-summary').innerHTML = html || '<span class="muted">No exercises logged yet</span>';
+      document.getElementById('workout-today-summary').innerHTML = html;
+    }
+
+    // Watch activity (separate informational section)
+    const watchCard = document.getElementById('watch-activity-card');
+    if(watch.length) {
+      watchCard.style.display = '';
+      document.getElementById('watch-activity-list').innerHTML = watch.map(w => {
+        const e = w.exercises[0];
+        return `<div class="hist-item"><b>${e.name}</b><br><span class="small muted">${e.duration||0} min · ${e.cal||0} cal${e.startTime ? ' · '+e.startTime : ''}</span></div>`;
+      }).join('');
+    } else {
+      watchCard.style.display = 'none';
+    }
   },
 
   renderHistory() {
-    const workouts = S.get('workouts', []).filter(w => w.date !== S.today()).sort((a,b) => b.date.localeCompare(a.date)).slice(0,10);
+    const workouts = S.get('workouts', []).filter(w => w.date !== S.today()).sort((a,b) => b.date.localeCompare(a.date)).slice(0,14);
     if(!workouts.length) {
       document.getElementById('workout-history').innerHTML = '<span class="muted">No previous workouts</span>';
       return;
     }
-    document.getElementById('workout-history').innerHTML = workouts.map(w => {
-      if(w.source === 'watch') {
+    // Group by date, preferring manual over watch
+    const byDate = {};
+    workouts.forEach(w => {
+      if(!byDate[w.date]) byDate[w.date] = {manual:[], watch:[]};
+      if(w.source === 'watch') byDate[w.date].watch.push(w);
+      else byDate[w.date].manual.push(w);
+    });
+    const dates = Object.keys(byDate).sort((a,b) => b.localeCompare(a)).slice(0,7);
+    document.getElementById('workout-history').innerHTML = dates.map(date => {
+      const g = byDate[date];
+      let html = '';
+      // Show manual entries first (primary)
+      g.manual.forEach(w => {
+        const exList = w.exercises.map(e => e.name).join(', ');
+        const totalSets = w.exercises.reduce((a,e) => a+e.sets.length, 0);
+        html += `<div class="hist-item"><span class="hist-date">${fmtDate(date)}</span>
+          <div class="hist-detail">${exList} <span class="muted">(${totalSets} sets)</span></div></div>`;
+      });
+      // Show watch entries (secondary, lighter)
+      g.watch.forEach(w => {
         const e = w.exercises[0];
-        return `<div class="hist-item"><span class="hist-date">${fmtDate(w.date)}</span>
+        html += `<div class="hist-item" style="opacity:0.7"><span class="hist-date">${g.manual.length ? '' : fmtDate(date)}</span>
           <div class="hist-detail">⌚ ${e.name} <span class="muted">${e.duration||0}min · ${e.cal||0} cal</span></div></div>`;
-      }
-      const exList = w.exercises.map(e => e.name).join(', ');
-      const totalSets = w.exercises.reduce((a,e) => a+e.sets.length, 0);
-      return `<div class="hist-item"><span class="hist-date">${fmtDate(w.date)}</span>
-        <div class="hist-detail">${exList} <span class="muted">(${totalSets} sets)</span></div></div>`;
+      });
+      return html;
     }).join('');
   },
 
@@ -2008,7 +2041,9 @@ const Coach = {
     this._dirty = false;
     const el = document.getElementById('coach-content');
     const health = S.get('healthImport', null);
-    const workouts = S.get('workouts', []);
+    const allWorkouts = S.get('workouts', []);
+    const workouts = allWorkouts.filter(w => w.source !== 'watch');
+    const watchWorkouts = allWorkouts.filter(w => w.source === 'watch');
     const daily = S.get('daily', []);
     const exercises = S.get('exercises', []);
     const measurements = S.get('measurements', []);
@@ -2019,16 +2054,22 @@ const Coach = {
     // ── Today's Status Overview ──
     html += '<div class="card"><h3>Status</h3>';
     const todayEntry = daily.find(d => d.date === today);
-    const todayWorkout = workouts.find(w => w.date === today);
+    const todayManual = workouts.find(w => w.date === today);
+    const todayWatch = watchWorkouts.filter(w => w.date === today);
     const todayCal = todayEntry ? todayEntry.foods.reduce((a,f) => a+f.cal, 0) : 0;
     const todaySteps = health ? (health.steps||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0) : 0;
     const todayActiveCal = health ? (health.activeCal||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0) : 0;
 
     const statusItems = [];
-    if(todayWorkout) {
-      const totalVol = todayWorkout.exercises.reduce((a,e) => a+e.sets.reduce((b,s) => b+s.weight*s.reps, 0), 0);
-      statusItems.push(`<div style="color:#10b981">Trained today — ${todayWorkout.exercises.length} exercises, ${Math.round(totalVol)}kg volume</div>`);
-    } else {
+    if(todayManual) {
+      const totalVol = todayManual.exercises.reduce((a,e) => a+e.sets.reduce((b,s) => b+s.weight*s.reps, 0), 0);
+      statusItems.push(`<div style="color:#10b981">Trained today — ${todayManual.exercises.length} exercises, ${Math.round(totalVol)}kg volume</div>`);
+    }
+    if(todayWatch.length) {
+      const watchSummary = todayWatch.map(w => w.exercises[0]).map(e => `${e.name} (${e.duration}min)`).join(', ');
+      statusItems.push(`<div style="color:#10b981">⌚ ${watchSummary} — ${todayWatch.reduce((a,w) => a+(w.exercises[0].cal||0), 0)} cal burned</div>`);
+    }
+    if(!todayManual && !todayWatch.length) {
       statusItems.push(`<div style="color:#f59e0b">No workout logged today</div>`);
     }
     if(todayCal > 0) statusItems.push(`<div>Food logged: <b>${todayCal}</b> cal</div>`);
@@ -2380,7 +2421,7 @@ const C = {
   },
 
   renderVolume(canvas) {
-    const workouts = S.get('workouts', []);
+    const workouts = S.get('workouts', []).filter(w => w.source !== 'watch');
     const health = S.get('healthImport', null);
 
     // Collect all dates that have any workout data
