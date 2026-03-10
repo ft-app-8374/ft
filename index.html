@@ -520,7 +520,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 27;
+const APP_VERSION = 28;
 
 /* ── Storage helpers ── */
 const S = {
@@ -1161,13 +1161,15 @@ const F = {
         <button class="btn btn-primary btn-sm" onclick="F.lookupBarcode(document.getElementById('manual-barcode').value)">Look up</button>
       </div>
       <div class="spacer"></div>
-      <button class="btn btn-secondary btn-block btn-sm" onclick="F.stopScanner();closeModalForce()">Cancel</button>
+      <button class="btn btn-secondary btn-block btn-sm" onclick="F.stopScanner().then(()=>closeModalForce())">Cancel</button>
     `);
     if(hasLib) this.startScanner();
   },
 
+  _scannerStopping: false,
   async startScanner() {
     try {
+      this._scannerStopping = false;
       this._html5Qr = new Html5Qrcode('scanner-container');
       await this._html5Qr.start(
         {facingMode: 'environment'},
@@ -1177,11 +1179,12 @@ const F = {
           Html5QrcodeSupportedFormats.CODE_128
         ]},
         (code) => {
+          if(this._scannerStopping) return;
+          this._scannerStopping = true;
           document.getElementById('scanner-status').textContent = `Found: ${code}`;
-          this.stopScanner();
-          this.lookupBarcode(code);
+          this.stopScanner().then(() => this.lookupBarcode(code));
         },
-        () => {} // ignore not-found frames
+        () => {}
       );
       document.getElementById('scanner-status').textContent = 'Point at a barcode...';
     } catch(e) {
@@ -1192,10 +1195,11 @@ const F = {
     }
   },
 
-  stopScanner() {
+  async stopScanner() {
+    this._scannerStopping = true;
     if(this._html5Qr) {
-      this._html5Qr.stop().catch(()=>{});
-      this._html5Qr.clear();
+      try { await this._html5Qr.stop(); } catch(e) {}
+      try { this._html5Qr.clear(); } catch(e) {}
       this._html5Qr = null;
     }
   },
