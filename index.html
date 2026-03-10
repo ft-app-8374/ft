@@ -6,7 +6,8 @@
   <title>FitTrack</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0f172a">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://world.openfoodfacts.org; connect-src 'self' https://world.openfoodfacts.org; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; media-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://world.openfoodfacts.org; connect-src 'self' https://world.openfoodfacts.org; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; media-src 'self' blob:; worker-src 'self' blob:">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="FitTrack">
@@ -437,6 +438,7 @@ textarea{resize:vertical;min-height:80px}
     <h3>Sync History</h3>
     <div id="import-history" class="muted">No syncs yet</div>
   </div>
+  <div class="muted" style="text-align:center;margin-top:16px;font-size:12px">FitTrack v<span id="app-ver"></span></div>
 </div>
 </div>
 
@@ -518,7 +520,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 26;
+const APP_VERSION = 27;
 
 /* ── Storage helpers ── */
 const S = {
@@ -920,8 +922,7 @@ const T = {
 const F = {
   searchTimeout: null,
   _lastResults: [],
-  _scannerStream: null,
-  _scannerInterval: null,
+  _html5QrScanner: null,
   _searchCache: {},
 
   render() {
@@ -1146,17 +1147,14 @@ const F = {
     this.clearSearch();
   },
 
-  // ── Barcode scanner ──
+  // ── Barcode scanner (html5-qrcode for cross-browser support) ──
+  _html5Qr: null,
   showScanner() {
-    const hasBarcodeDetector = 'BarcodeDetector' in window;
+    const hasLib = typeof Html5Qrcode !== 'undefined';
     showModal(`
       <h3>Scan Barcode</h3>
-      <div id="scanner-container">
-        <video id="scanner-video" autoplay playsinline muted></video>
-        <div id="scanner-overlay"></div>
-      </div>
-      <div class="scanner-status" id="scanner-status">Starting camera...</div>
-      ${!hasBarcodeDetector ? '<div class="muted small" style="margin-top:8px;text-align:center">Camera scanning not supported on this device.<br>Enter barcode manually below.</div>' : ''}
+      <div id="scanner-container" style="min-height:250px"></div>
+      <div class="scanner-status" id="scanner-status">${hasLib ? 'Starting camera...' : 'Scanner library failed to load.'}</div>
       <div class="spacer"></div>
       <div class="row">
         <input id="manual-barcode" inputmode="numeric" placeholder="Or type barcode number" style="flex:1">
@@ -1165,40 +1163,40 @@ const F = {
       <div class="spacer"></div>
       <button class="btn btn-secondary btn-block btn-sm" onclick="F.stopScanner();closeModalForce()">Cancel</button>
     `);
-    if(hasBarcodeDetector) this.startScanner();
+    if(hasLib) this.startScanner();
   },
 
   async startScanner() {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:640},height:{ideal:480}}});
-      this._scannerStream = stream;
-      const video = document.getElementById('scanner-video');
-      if(!video) { stream.getTracks().forEach(t=>t.stop()); return; }
-      video.srcObject = stream;
-      const detector = new BarcodeDetector({formats:['ean_13','ean_8','upc_a','upc_e']});
+      this._html5Qr = new Html5Qrcode('scanner-container');
+      await this._html5Qr.start(
+        {facingMode: 'environment'},
+        {fps: 10, qrbox: {width: 250, height: 150}, formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E,
+          Html5QrcodeSupportedFormats.CODE_128
+        ]},
+        (code) => {
+          document.getElementById('scanner-status').textContent = `Found: ${code}`;
+          this.stopScanner();
+          this.lookupBarcode(code);
+        },
+        () => {} // ignore not-found frames
+      );
       document.getElementById('scanner-status').textContent = 'Point at a barcode...';
-      this._scannerInterval = setInterval(async () => {
-        if(video.readyState < 2) return;
-        try {
-          const barcodes = await detector.detect(video);
-          if(barcodes.length > 0) {
-            const code = barcodes[0].rawValue;
-            document.getElementById('scanner-status').textContent = `Found: ${code}`;
-            this.stopScanner();
-            this.lookupBarcode(code);
-          }
-        } catch(e) {}
-      }, 300);
     } catch(e) {
-      document.getElementById('scanner-status').textContent = 'Camera access denied. Enter barcode manually.';
+      const msg = String(e);
+      document.getElementById('scanner-status').textContent = msg.includes('Permission') || msg.includes('NotAllowed')
+        ? 'Camera access denied. Enter barcode manually.'
+        : 'Camera not available. Enter barcode manually.';
     }
   },
 
   stopScanner() {
-    clearInterval(this._scannerInterval);
-    if(this._scannerStream) {
-      this._scannerStream.getTracks().forEach(t => t.stop());
-      this._scannerStream = null;
+    if(this._html5Qr) {
+      this._html5Qr.stop().catch(()=>{});
+      this._html5Qr.clear();
+      this._html5Qr = null;
     }
   },
 
@@ -2429,41 +2427,38 @@ const C = {
 
     if(!hasVol && !hasCal && !hasMins) { clearCanvas(canvas, 'No workout data'); return; }
 
-    // Use multi-axis approach: draw bars for volume, lines for cal & mins
+    // Dual Y-axis: Left = Exercise Minutes, Right = Active Calories
+    // Volume bars use left axis scale
     const {ctx, w, h} = setupCanvas(canvas);
-    const pad = {top:20, right:50, bottom:40, left:50};
+    const pad = {top:20, right:55, bottom:40, left:55};
     const cw = w - pad.left - pad.right;
     const ch = h - pad.top - pad.bottom;
 
-    // Left axis: volume (bars)
-    const volMax = Math.max(...volData.map(d=>d.y), 1) * 1.1;
-    // Right axis: active cal / exercise mins (lines)
-    const rightMax = Math.max(
-      hasCal ? Math.max(...calData.map(d=>d.y)) : 0,
-      hasMins ? Math.max(...minsData.map(d=>d.y)) * 5 : 0, // scale mins up
-      1
-    ) * 1.1;
+    // Left axis: exercise minutes (also used for volume bar scaling)
+    const minsMax = hasMins ? Math.max(...minsData.map(d=>d.y), 1) * 1.2 : 60;
+    // Right axis: active calories
+    const calMax = hasCal ? Math.max(...calData.map(d=>d.y), 1) * 1.1 : 500;
+    // Volume gets its own implicit scale for bars
+    const volMax = hasVol ? Math.max(...volData.map(d=>d.y), 1) * 1.1 : 1;
 
     // Grid lines
     ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
     for(let i=0;i<=4;i++){
       const y = pad.top + ch * (1 - i/4);
       ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
-      // Left axis labels (volume)
-      if(hasVol) {
-        ctx.fillStyle = '#10b981'; ctx.font = '10px system-ui'; ctx.textAlign = 'right';
-        ctx.fillText(Math.round(volMax*i/4), pad.left-6, y+4);
-      }
-      // Right axis labels (cal)
+      // Left axis labels (minutes)
+      ctx.fillStyle = '#3b82f6'; ctx.font = '10px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText(Math.round(minsMax*i/4) + 'm', pad.left-6, y+4);
+      // Right axis labels (calories)
       if(hasCal) {
         ctx.fillStyle = '#f59e0b'; ctx.font = '10px system-ui'; ctx.textAlign = 'left';
-        ctx.fillText(Math.round(rightMax*i/4), w-pad.right+6, y+4);
+        ctx.fillText(Math.round(calMax*i/4), w-pad.right+6, y+4);
       }
     }
 
     const gap = cw / dates.length;
 
-    // Bars: volume
+    // Bars: volume (scaled to fill chart area, no axis label — just legend)
     if(hasVol) {
       const barW = Math.max(3, gap * 0.5);
       ctx.fillStyle = 'rgba(16,185,129,0.4)';
@@ -2476,34 +2471,32 @@ const C = {
       });
     }
 
-    // Line: active calories
+    // Line: active calories (right axis)
     if(hasCal) {
       ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
       ctx.beginPath();
       calData.forEach((d,i) => {
         const x = pad.left + gap * i + gap/2;
-        const y = pad.top + ch * (1 - d.y / rightMax);
+        const y = pad.top + ch * (1 - d.y / calMax);
         if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
       });
       ctx.stroke();
-      // Dots
       ctx.fillStyle = '#f59e0b';
       calData.forEach((d,i) => {
         if(d.y <= 0) return;
         const x = pad.left + gap * i + gap/2;
-        const y = pad.top + ch * (1 - d.y / rightMax);
+        const y = pad.top + ch * (1 - d.y / calMax);
         ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2); ctx.fill();
       });
     }
 
-    // Line: exercise minutes
+    // Line: exercise minutes (left axis)
     if(hasMins) {
       ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
       ctx.beginPath();
       minsData.forEach((d,i) => {
         const x = pad.left + gap * i + gap/2;
-        const scaledY = d.y * 5; // scale mins to make visible alongside cal
-        const y = pad.top + ch * (1 - scaledY / rightMax);
+        const y = pad.top + ch * (1 - d.y / minsMax);
         if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
       });
       ctx.stroke();
@@ -2511,8 +2504,7 @@ const C = {
       minsData.forEach((d,i) => {
         if(d.y <= 0) return;
         const x = pad.left + gap * i + gap/2;
-        const scaledY = d.y * 5;
-        const y = pad.top + ch * (1 - scaledY / rightMax);
+        const y = pad.top + ch * (1 - d.y / minsMax);
         ctx.beginPath(); ctx.arc(x,y,2.5,0,Math.PI*2); ctx.fill();
       });
     }
@@ -2866,23 +2858,33 @@ if(I.handleURLImport()) {
   T.render();
 }
 F.initSearch();
+const verEl = document.getElementById('app-ver');
+if(verEl) verEl.textContent = APP_VERSION;
 
 if('serviceWorker' in navigator) {
   const lastVer = parseInt(localStorage.getItem('ft.swVersion') || '0');
   if(lastVer < APP_VERSION) {
+    // Nuclear cache clear on version bump — ensures both PWA and browser get fresh code
     caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
     localStorage.setItem('ft.swVersion', String(APP_VERSION));
-  }
-  navigator.serviceWorker.register('sw.js').then(reg => {
-    reg.update();
-    reg.addEventListener('updatefound', () => {
-      const nw = reg.installing;
-      nw.addEventListener('statechange', () => {
-        if(nw.state === 'activated') window.location.reload();
+    // Reload after clearing to get fresh SW registration
+    setTimeout(() => window.location.reload(), 500);
+  } else {
+    navigator.serviceWorker.register('sw.js').then(reg => {
+      // Check for updates every time the app loads
+      reg.update();
+      reg.addEventListener('updatefound', () => {
+        const nw = reg.installing;
+        nw.addEventListener('statechange', () => {
+          if(nw.state === 'activated') window.location.reload();
+        });
       });
     });
-  });
+  }
 }
+// Show version in console for debugging sync issues
+console.log('FitTrack v' + APP_VERSION);
 
 if('Notification' in window && Notification.permission === 'default') {
   document.addEventListener('click', function once() {
