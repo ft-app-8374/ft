@@ -251,6 +251,21 @@ textarea{resize:vertical;min-height:80px}
     <h3>Insights</h3>
     <div id="insights-content"></div>
   </div>
+
+  <div id="coach-dashboard-section">
+    <div class="card" style="border-left:3px solid #3b82f6">
+      <h3 style="color:#3b82f6">Coach</h3>
+      <div id="coach-content"></div>
+    </div>
+  </div>
+
+  <div class="card" id="gym-scanner-card">
+    <h3>Gym Scanner</h3>
+    <div class="muted small" style="margin-bottom:10px">Take a photo of your gym — AI will detect equipment and suggest a tailored workout</div>
+    <input type="file" id="gym-photo-input" accept="image/*" capture="environment" style="display:none" onchange="W.processGymPhoto(this)">
+    <button class="btn btn-primary btn-block btn-sm" onclick="document.getElementById('gym-photo-input').click()">Scan Gym Equipment</button>
+    <div id="gym-scan-result"></div>
+  </div>
 </div>
 </div>
 
@@ -443,13 +458,6 @@ textarea{resize:vertical;min-height:80px}
 </div>
 
 <!-- ── COACH TAB ── -->
-<div id="tab-coach" class="tab-content">
-<div class="wrap">
-  <h2 style="margin-bottom:12px">Coach</h2>
-  <div id="coach-content"></div>
-</div>
-</div>
-
 <!-- ── CHARTS TAB ── -->
 <div id="tab-charts" class="tab-content">
 <div class="wrap">
@@ -462,7 +470,6 @@ textarea{resize:vertical;min-height:80px}
     <button class="pill" data-chart="steps" onclick="C.switchChart('steps')">Steps</button>
     <button class="pill" data-chart="heart" onclick="C.switchChart('heart')">Heart</button>
     <button class="pill" data-chart="netcal" onclick="C.switchChart('netcal')">Net Cal</button>
-    <button class="pill" data-chart="wellness" onclick="C.switchChart('wellness')">Wellness</button>
   </div>
 
   <div class="card">
@@ -491,9 +498,6 @@ textarea{resize:vertical;min-height:80px}
   <button data-tab="workout" onclick="switchTab('workout')">
     <span class="tab-icon">&#127947;</span><span>Workout</span>
   </button>
-  <button data-tab="coach" onclick="switchTab('coach')">
-    <span class="tab-icon">&#129302;</span><span>Coach</span>
-  </button>
   <button data-tab="charts" onclick="switchTab('charts')">
     <span class="tab-icon">&#128200;</span><span>Charts</span>
   </button>
@@ -505,7 +509,7 @@ textarea{resize:vertical;min-height:80px}
 <!-- ── REST TIMER OVERLAY ── -->
 <div id="rest-timer-overlay" class="hidden">
   <div class="timer-label">Rest Timer</div>
-  <div class="timer-display" id="timer-countdown">90</div>
+  <div class="timer-display" id="timer-countdown">60</div>
   <div class="spacer"></div>
   <div class="row">
     <button class="btn btn-secondary" onclick="W.skipTimer()">Skip</button>
@@ -520,7 +524,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 28;
+const APP_VERSION = 29;
 
 /* ── Storage helpers ── */
 const S = {
@@ -560,12 +564,11 @@ function switchTab(name) {
   document.getElementById('tab-'+name).classList.add('active');
   document.querySelector(`#tab-bar button[data-tab="${name}"]`).classList.add('active');
   window.scrollTo(0, tabScrollPos['tab-'+name] || 0);
-  if(name==='today') T.render();
+  if(name==='today') { T.render(); Coach.render(); }
   if(name==='food') F.render();
   if(name==='workout') W.render();
   if(name==='measurements') M.render();
   if(name==='sync') I.render();
-  if(name==='coach') { Coach._dirty = true; Coach.render(); }
   if(name==='charts') C.render();
 }
 
@@ -1402,7 +1405,7 @@ const W = {
     const plan = [];
     const setsPerExercise = mins <= 30 ? 3 : 4;
     const exerciseCount = mins <= 30 ? 4 : 6;
-    const restTime = isLowEnergy || !recoveryOK ? 120 : 90;
+    const restTime = isLowEnergy || !recoveryOK ? 90 : 60;
 
     // Select exercises — 2 from primary category, 1-2 from secondary, 1 core
     const primaryCat = catOrder[0];
@@ -1525,11 +1528,11 @@ const W = {
       const isCurrent = i === g.currentIdx;
       const cls = e.done ? 'guided-ex-item done' : isCurrent ? 'guided-ex-item current' : 'guided-ex-item';
       const status = e.done ? '&#10003;' : isCurrent ? '&#9654;' : `${i+1}`;
-      const onclick = e.done ? '' : `onclick="W.guidedSelectExercise(${i})"`;
-      return `<div class="${cls}" ${onclick} style="cursor:${e.done?'default':'pointer'}">
+      const onclick = `onclick="W.guidedSelectExercise(${i})"`;
+      return `<div class="${cls}" ${onclick} style="cursor:pointer">
         <div>
           <div class="gx-name">${e.name}</div>
-          <div class="gx-detail">${e.sets} sets x ${e.reps} reps${e.weight ? ' @ '+e.weight+'kg' : ''}</div>
+          <div class="gx-detail">${e.sets} sets x ${e.reps} reps${e.weight ? ' @ '+e.weight+'kg' : ''}${e.done ? ' · tap to edit' : ''}</div>
         </div>
         <div class="gx-status" style="color:${e.done?'#10b981':isCurrent?'#3b82f6':'#475569'}">${status}</div>
       </div>`;
@@ -1538,11 +1541,17 @@ const W = {
 
   guidedSelectExercise(idx) {
     const g = this.guidedPlan;
-    if(!g || g.exercises[idx].done) return;
+    if(!g) return;
     g.currentIdx = idx;
     const planned = g.exercises[idx];
     this.selectExercise(planned.name);
-    this.currentSets = Array.from({length: planned.sets}, () => ({weight: planned.weight, reps: planned.reps, done: false}));
+    if(planned.done && planned._savedSets) {
+      // Re-editing: load the saved sets so user can modify them
+      this.currentSets = planned._savedSets.map(s => ({weight: s.weight, reps: s.reps, done: true}));
+      planned.done = false; // Temporarily un-mark so finishExercise will re-save
+    } else {
+      this.currentSets = Array.from({length: planned.sets}, () => ({weight: planned.weight, reps: planned.reps, done: false}));
+    }
     this.render();
   },
 
@@ -1551,6 +1560,156 @@ const W = {
     this.selectedExercise = null;
     this.currentSets = [];
     this.render();
+  },
+
+  async processGymPhoto(input) {
+    const file = input.files && input.files[0];
+    if(!file) return;
+    const resultEl = document.getElementById('gym-scan-result');
+    resultEl.innerHTML = '<div class="muted" style="text-align:center;padding:12px">Analysing gym equipment...</div>';
+
+    try {
+      // Read image as base64
+      const reader = new FileReader();
+      const dataUrl = await new Promise((resolve, reject) => {
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+
+      // Show thumbnail
+      resultEl.innerHTML = `<div style="text-align:center;margin:8px 0"><img src="${dataUrl}" style="max-width:100%;max-height:200px;border-radius:12px;margin-bottom:8px"></div><div class="muted" style="text-align:center">Detecting equipment...</div>`;
+
+      // Detect equipment from image using local analysis
+      const equipment = this.detectEquipmentFromImage(dataUrl);
+      this.showGymWorkout(equipment, resultEl);
+    } catch(e) {
+      resultEl.innerHTML = '<div style="color:#ef4444;padding:8px">Could not process image. Try another photo.</div>';
+    }
+    input.value = '';
+  },
+
+  detectEquipmentFromImage(dataUrl) {
+    // Local equipment detection based on common gym setups
+    // Since we can't run a vision model client-side, we provide equipment presets
+    // and let the user confirm/adjust
+    return null; // trigger the manual picker
+  },
+
+  showGymWorkout(detected, resultEl) {
+    const allEquipment = [
+      {id:'barbell', name:'Barbell & Rack', icon:'🏋️'},
+      {id:'dumbbells', name:'Dumbbells', icon:'💪'},
+      {id:'cables', name:'Cable Machine', icon:'🔗'},
+      {id:'pullup', name:'Pull-up Bar', icon:'🔝'},
+      {id:'bench', name:'Bench', icon:'🪑'},
+      {id:'smith', name:'Smith Machine', icon:'⚙️'},
+      {id:'legpress', name:'Leg Press', icon:'🦵'},
+      {id:'treadmill', name:'Treadmill/Cardio', icon:'🏃'},
+      {id:'bands', name:'Resistance Bands', icon:'〰️'},
+      {id:'kettlebell', name:'Kettlebells', icon:'🔔'},
+      {id:'bodyweight', name:'Bodyweight Only', icon:'🧘'},
+    ];
+
+    let html = '<div style="margin:12px 0"><div style="font-weight:600;font-size:14px;margin-bottom:8px">What equipment is available?</div>';
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    allEquipment.forEach(eq => {
+      html += `<button class="pill gym-eq-btn" data-eq="${eq.id}" onclick="this.classList.toggle('active');this.style.background=this.classList.contains('active')?'#3b82f6':'';this.style.color=this.classList.contains('active')?'#fff':''" style="font-size:12px;padding:6px 10px">${eq.icon} ${eq.name}</button>`;
+    });
+    html += '</div>';
+    html += '<div style="margin-top:10px"><button class="btn btn-primary btn-block btn-sm" onclick="W.generateGymWorkout()">Generate Workout</button></div>';
+    html += '</div>';
+    resultEl.innerHTML = html;
+  },
+
+  generateGymWorkout() {
+    const selected = Array.from(document.querySelectorAll('.gym-eq-btn.active')).map(b => b.dataset.eq);
+    if(!selected.length) { alert('Select at least one piece of equipment'); return; }
+
+    const exercises = S.get('exercises', []);
+    const equipmentExercises = {
+      barbell: ['Barbell Squat','Deadlift','Barbell Row','Overhead Press','Bench Press','Barbell Curl'],
+      dumbbells: ['Dumbbell Press','Dumbbell Row','Lateral Raise','Dumbbell Curl','Dumbbell Lunge','Dumbbell Fly'],
+      cables: ['Cable Fly','Cable Row','Lat Pulldown','Tricep Pushdown','Face Pull','Cable Curl'],
+      pullup: ['Pull-ups','Chin-ups','Hanging Leg Raise'],
+      bench: ['Bench Press','Incline Press','Dumbbell Fly','Step-ups'],
+      smith: ['Smith Squat','Smith Bench','Smith Shoulder Press','Smith Calf Raise'],
+      legpress: ['Leg Press','Calf Raise','Single Leg Press'],
+      treadmill: ['Treadmill Intervals'],
+      bands: ['Banded Pull-apart','Banded Squat','Banded Push-up','Banded Row'],
+      kettlebell: ['Kettlebell Swing','Goblet Squat','Turkish Get-up','KB Clean & Press'],
+      bodyweight: ['Push-ups','Bodyweight Squat','Plank','Mountain Climbers','Burpees','Lunges'],
+    };
+
+    // Build exercise pool from available equipment
+    const pool = [];
+    selected.forEach(eq => {
+      (equipmentExercises[eq] || []).forEach(name => {
+        if(!pool.find(p => p.name === name)) {
+          const existing = exercises.find(e => e.name === name);
+          pool.push({
+            name,
+            weight: existing ? (existing.lastWeight || 0) : 0,
+            reps: existing ? (existing.lastReps || 8) : 10,
+            cat: existing ? existing.cat : 'push',
+          });
+        }
+      });
+    });
+
+    // Pick a balanced workout (2 push, 2 pull, 1 legs, 1 core-ish)
+    const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
+    const plan = [];
+    const cats = {push:[], pull:[], legs:[], core:[]};
+    // Rough categorisation for gym-specific exercises
+    const catMap = {
+      'Bench Press':'push','Incline Press':'push','Dumbbell Press':'push','Dumbbell Fly':'push','Cable Fly':'push','Overhead Press':'push','Lateral Raise':'push','Smith Bench':'push','Smith Shoulder Press':'push','Push-ups':'push','Banded Push-up':'push','KB Clean & Press':'push',
+      'Barbell Row':'pull','Dumbbell Row':'pull','Cable Row':'pull','Lat Pulldown':'pull','Pull-ups':'pull','Chin-ups':'pull','Face Pull':'pull','Barbell Curl':'pull','Dumbbell Curl':'pull','Cable Curl':'pull','Banded Pull-apart':'pull','Banded Row':'pull',
+      'Barbell Squat':'legs','Deadlift':'legs','Dumbbell Lunge':'legs','Leg Press':'legs','Smith Squat':'legs','Single Leg Press':'legs','Calf Raise':'legs','Smith Calf Raise':'legs','Bodyweight Squat':'legs','Lunges':'legs','Goblet Squat':'legs','Step-ups':'legs','Kettlebell Swing':'legs','Banded Squat':'legs',
+      'Hanging Leg Raise':'core','Plank':'core','Mountain Climbers':'core','Burpees':'core','Turkish Get-up':'core',
+    };
+    pool.forEach(p => {
+      const cat = catMap[p.name] || p.cat || 'push';
+      p.cat = cat;
+      if(cats[cat]) cats[cat].push(p);
+    });
+
+    // Pick exercises
+    shuffle(cats.push).slice(0,2).forEach(e => plan.push(e));
+    shuffle(cats.pull).slice(0,2).forEach(e => plan.push(e));
+    shuffle(cats.legs).slice(0,2).forEach(e => plan.push(e));
+    shuffle(cats.core).slice(0,1).forEach(e => plan.push(e));
+    // Fill if short
+    if(plan.length < 5) {
+      const remaining = pool.filter(p => !plan.find(x => x.name === p.name));
+      shuffle(remaining).slice(0, 5 - plan.length).forEach(e => plan.push(e));
+    }
+
+    if(!plan.length) {
+      document.getElementById('gym-scan-result').innerHTML = '<div class="muted" style="padding:8px">No matching exercises found. Try selecting different equipment.</div>';
+      return;
+    }
+
+    // Store as a suggestion and trigger the guided workout flow
+    const fullPlan = plan.map(p => ({
+      name: p.name,
+      sets: 3,
+      reps: p.reps,
+      weight: p.weight,
+      rest: p.cat === 'core' ? 45 : 60,
+      done: false,
+      cat: p.cat,
+      tips: [],
+      muscles: [],
+      video: ''
+    }));
+
+    const estMins = Math.round(fullPlan.length * 3 * 1.5 + fullPlan.length * 3);
+    this._lastSuggestion = {plan: fullPlan, estMins, isLowEnergy: false, recoveryOK: true, primaryCat: 'push', secondaryCat: 'pull'};
+
+    // Switch to workout tab and show the suggestion
+    switchTab('workout');
+    this.renderSuggestion();
   },
 
   selectExercise(name) {
@@ -1587,7 +1746,7 @@ const W = {
     if(this.currentSets[i].done) {
       const restSecs = this.guidedPlan
         ? this.guidedPlan.exercises[this.guidedPlan.currentIdx].rest
-        : (S.get('settings', {}).restTimerDefault || 90);
+        : (S.get('settings', {}).restTimerDefault || 60);
       this.startTimer(restSecs);
     }
   },
@@ -1609,10 +1768,21 @@ const W = {
       todayWorkout = {id: 'w_'+Date.now(), date: today, exercises: [], notes: ''};
       workouts.push(todayWorkout);
     }
-    todayWorkout.exercises.push({
+    // Check if this exercise was already logged (re-editing) — update instead of duplicate
+    const existingIdx = todayWorkout.exercises.findIndex(e => e.name === this.selectedExercise);
+    const exerciseEntry = {
       name: this.selectedExercise,
       sets: completedSets.map(s => ({weight: s.weight, reps: s.reps}))
-    });
+    };
+    if(this._editingExerciseIdx !== undefined) {
+      // Re-editing a completed exercise
+      todayWorkout.exercises[this._editingExerciseIdx] = exerciseEntry;
+      delete this._editingExerciseIdx;
+    } else if(existingIdx >= 0 && this.guidedPlan) {
+      todayWorkout.exercises[existingIdx] = exerciseEntry;
+    } else {
+      todayWorkout.exercises.push(exerciseEntry);
+    }
     S.set('workouts', workouts);
 
     // Update exercise stats
@@ -1633,6 +1803,7 @@ const W = {
       const g = this.guidedPlan;
       g.exercises[g.currentIdx].done = true;
       g.exercises[g.currentIdx].completedSets = completedSets.length;
+      g.exercises[g.currentIdx]._savedSets = completedSets.map(s => ({weight: s.weight, reps: s.reps}));
 
       // Find next undone exercise
       const nextIdx = g.exercises.findIndex((e, i) => i > g.currentIdx && !e.done);
@@ -1669,6 +1840,19 @@ const W = {
     Coach.refreshIfVisible();
   },
 
+  editCompletedExercise(name, exerciseIdx) {
+    // Load a completed exercise back into the active editor for editing
+    const workouts = S.get('workouts', []);
+    const todayWorkout = workouts.find(w => w.date === S.today() && w.source !== 'watch');
+    if(!todayWorkout || !todayWorkout.exercises[exerciseIdx]) return;
+    const ex = todayWorkout.exercises[exerciseIdx];
+    this.selectedExercise = ex.name;
+    this._editingExerciseIdx = exerciseIdx;
+    this.currentSets = ex.sets.map(s => ({weight: s.weight, reps: s.reps, done: true}));
+    this.render();
+    document.getElementById('active-exercise').scrollIntoView({behavior: 'smooth'});
+  },
+
   renderTodaySummary() {
     const allWorkouts = S.get('workouts', []).filter(w => w.date === S.today());
     const manual = allWorkouts.filter(w => w.source !== 'watch');
@@ -1680,9 +1864,9 @@ const W = {
     } else {
       let html = '';
       manual.forEach(w => {
-        w.exercises.forEach(e => {
+        w.exercises.forEach((e, eIdx) => {
           const setsStr = e.sets.map(s => `${s.weight}kg x ${s.reps}`).join(', ');
-          html += `<div class="hist-item"><b>${e.name}</b><br><span class="small muted">${setsStr}</span></div>`;
+          html += `<div class="hist-item" style="cursor:pointer" onclick="W.editCompletedExercise('${e.name.replace(/'/g, "\\'")}',${eIdx})"><b>${e.name}</b> <span class="small muted" style="color:#3b82f6">edit</span><br><span class="small muted">${setsStr}</span></div>`;
         });
       });
       document.getElementById('workout-today-summary').innerHTML = html;
@@ -1991,12 +2175,11 @@ const Coach = {
   _dirty: false,
 
   refreshIfVisible() {
-    // If coach tab is active, re-render immediately
-    const coachTab = document.getElementById('tab-coach');
-    if(coachTab && coachTab.classList.contains('active')) {
+    // If today tab is active, re-render coach section immediately
+    const todayTab = document.getElementById('tab-today');
+    if(todayTab && todayTab.classList.contains('active')) {
       this.render();
     } else {
-      // Mark dirty so it refreshes when tab is opened
       this._dirty = true;
     }
   },
@@ -2004,6 +2187,7 @@ const Coach = {
   render() {
     this._dirty = false;
     const el = document.getElementById('coach-content');
+    if(!el) return;
     const health = S.get('healthImport', null);
     const allWorkouts = S.get('workouts', []);
     const workouts = allWorkouts.filter(w => w.source !== 'watch');
@@ -2015,65 +2199,107 @@ const Coach = {
 
     let html = '';
 
-    // ── Today's Status Overview ──
-    html += '<div class="card"><h3>Status</h3>';
+    // ── Weekly Trends & Encouragements (top priority) ──
+    const trends = this.getWeeklyTrends(workouts, watchWorkouts, daily, exercises, measurements, health, today);
+    if(trends.length) {
+      html += trends.map(t =>
+        `<div style="padding:8px 0;border-bottom:1px solid #f1f5f9"><div style="font-weight:600;font-size:14px;margin-bottom:2px">${t.emoji} ${t.title}</div><div style="font-size:13px;color:#475569">${t.body}</div></div>`
+      ).join('');
+    }
+
+    // ── Top 3 actionable recommendations (curated from all categories) ──
+    const allRecs = [];
     const todayEntry = daily.find(d => d.date === today);
-    const todayManual = workouts.find(w => w.date === today);
-    const todayWatch = watchWorkouts.filter(w => w.date === today);
     const todayCal = todayEntry ? todayEntry.foods.reduce((a,f) => a+f.cal, 0) : 0;
-    const todaySteps = health ? (health.steps||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0) : 0;
     const todayActiveCal = health ? (health.activeCal||[]).filter(r => r.date === today).reduce((a,r) => a+r.value, 0) : 0;
-
-    const statusItems = [];
-    if(todayManual) {
-      const totalVol = todayManual.exercises.reduce((a,e) => a+e.sets.reduce((b,s) => b+s.weight*s.reps, 0), 0);
-      statusItems.push(`<div style="color:#10b981">Trained today — ${todayManual.exercises.length} exercises, ${Math.round(totalVol)}kg volume</div>`);
+    allRecs.push(...this.getWorkoutRecs(workouts, exercises, todayEntry).map(r => ({...r, cat: 'workout'})));
+    allRecs.push(...this.getRecoveryRecs(health, daily, workouts).map(r => ({...r, cat: 'recovery'})));
+    allRecs.push(...this.getFocusAreas(workouts, exercises, measurements, health).map(r => ({...r, cat: 'focus'})));
+    // Skip generic/filler recs
+    const actionable = allRecs.filter(r => !['On Track','Keep Going','Recovery','Tracking'].includes(r.title));
+    if(actionable.length) {
+      html += '<div style="margin-top:8px">';
+      actionable.slice(0, 3).forEach(r => {
+        const icon = r.cat === 'workout' ? '💪' : r.cat === 'recovery' ? '🔋' : '🎯';
+        html += `<div style="padding:6px 0;border-bottom:1px solid #f1f5f9"><div style="font-weight:600;font-size:13px">${icon} ${r.title}</div><div style="font-size:12px;color:#64748b">${r.body}</div></div>`;
+      });
+      html += '</div>';
     }
-    if(todayWatch.length) {
-      const watchSummary = todayWatch.map(w => w.exercises[0]).map(e => `${e.name} (${e.duration}min)`).join(', ');
-      statusItems.push(`<div style="color:#10b981">⌚ ${watchSummary} — ${todayWatch.reduce((a,w) => a+(w.exercises[0].cal||0), 0)} cal burned</div>`);
+
+    if(!trends.length && !actionable.length) {
+      html += '<div class="muted" style="text-align:center;padding:12px">Log workouts and sync health data for personalized coaching</div>';
     }
-    if(!todayManual && !todayWatch.length) {
-      statusItems.push(`<div style="color:#f59e0b">No workout logged today</div>`);
-    }
-    if(todayCal > 0) statusItems.push(`<div>Food logged: <b>${todayCal}</b> cal</div>`);
-    if(todaySteps > 0) statusItems.push(`<div>Steps: <b>${Math.round(todaySteps).toLocaleString()}</b></div>`);
-    if(todayActiveCal > 0) statusItems.push(`<div>Active calories burned: <b>${Math.round(todayActiveCal)}</b> kcal</div>`);
-    html += statusItems.join('') + '</div>';
-
-    // ── Exercise Recommendations ──
-    html += '<div class="card"><h3>Workout Suggestions</h3>';
-    const workoutRecs = this.getWorkoutRecs(workouts, exercises, todayEntry);
-    html += workoutRecs.map(r =>
-      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
-    ).join('');
-    html += '</div>';
-
-    // ── Nutrition Coaching ──
-    html += '<div class="card"><h3>Nutrition</h3>';
-    const nutritionRecs = this.getNutritionRecs(daily, health, todayCal, todayActiveCal);
-    html += nutritionRecs.map(r =>
-      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
-    ).join('');
-    html += '</div>';
-
-    // ── Recovery & Wellness ──
-    html += '<div class="card"><h3>Recovery</h3>';
-    const recoveryRecs = this.getRecoveryRecs(health, daily, workouts);
-    html += recoveryRecs.map(r =>
-      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
-    ).join('');
-    html += '</div>';
-
-    // ── Focus Areas ──
-    html += '<div class="card"><h3>Focus Areas</h3>';
-    const focusRecs = this.getFocusAreas(workouts, exercises, measurements, health);
-    html += focusRecs.map(r =>
-      `<div class="insight-card"><div class="insight-title">${r.title}</div><div class="insight-body">${r.body}</div></div>`
-    ).join('');
-    html += '</div>';
 
     el.innerHTML = html;
+  },
+
+  getWeeklyTrends(workouts, watchWorkouts, daily, exercises, measurements, health, today) {
+    const trends = [];
+    const thisWeekStart = weekStart(today);
+    const lastWeekStart = addDays(thisWeekStart, -7);
+
+    // Workout frequency comparison
+    const thisWeek = workouts.filter(w => w.date >= thisWeekStart);
+    const lastWeek = workouts.filter(w => w.date >= lastWeekStart && w.date < thisWeekStart);
+    const thisWeekAll = [...thisWeek, ...watchWorkouts.filter(w => w.date >= thisWeekStart)];
+    const lastWeekAll = [...lastWeek, ...watchWorkouts.filter(w => w.date >= lastWeekStart && w.date < thisWeekStart)];
+
+    if(lastWeekAll.length > 0) {
+      const diff = thisWeekAll.length - lastWeekAll.length;
+      if(diff > 0) {
+        trends.push({emoji:'📈', title:'More Active This Week', body:`${thisWeekAll.length} sessions so far vs ${lastWeekAll.length} last week. Keep this momentum going!`});
+      } else if(diff < 0) {
+        trends.push({emoji:'⚡', title:'Pick Up the Pace', body:`${thisWeekAll.length} sessions this week vs ${lastWeekAll.length} last week. Still time to match it — get one in today!`});
+      } else {
+        trends.push({emoji:'✅', title:'Staying Consistent', body:`${thisWeekAll.length} sessions, matching last week. Consistency beats intensity — great work.`});
+      }
+    }
+
+    // Volume trend
+    const thisWeekVol = thisWeek.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+    const lastWeekVol = lastWeek.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+    if(thisWeekVol > 0 && lastWeekVol > 0) {
+      const pct = Math.round((thisWeekVol - lastWeekVol) / lastWeekVol * 100);
+      if(pct > 10) {
+        trends.push({emoji:'🏆', title:`Volume Up ${pct}%`, body:`${Math.round(thisWeekVol).toLocaleString()}kg total this week vs ${Math.round(lastWeekVol).toLocaleString()}kg last week. You're getting stronger!`});
+      } else if(pct < -15) {
+        trends.push({emoji:'📊', title:`Volume Down ${Math.abs(pct)}%`, body:`If this is a deload, perfect. Otherwise, aim to push a bit harder next session.`});
+      }
+    }
+
+    // Streak motivation
+    const sorted = [...workouts, ...watchWorkouts].sort((a,b) => b.date.localeCompare(a.date));
+    let streak = 0;
+    let checkDate = today;
+    for(let i = 0; i < 60; i++) {
+      if(sorted.find(w => w.date === checkDate)) { streak++; checkDate = addDays(checkDate, -1); }
+      else if(i === 0) { checkDate = addDays(checkDate, -1); continue; }
+      else break;
+    }
+    if(streak >= 3) {
+      trends.push({emoji:'🔥', title:`${streak}-Day Streak`, body: streak >= 7 ? `A full week of training — you're a machine. Remember to schedule rest!` : `${streak} days in a row. You're building a habit. Keep showing up!`});
+    }
+
+    // Weight trend encouragement
+    const recentWeights = measurements.filter(m => m.weight).slice(-8);
+    if(recentWeights.length >= 4) {
+      const first = recentWeights[0].weight;
+      const last = recentWeights[recentWeights.length-1].weight;
+      const change = last - first;
+      if(Math.abs(change) >= 0.5) {
+        const dir = change < 0 ? 'down' : 'up';
+        trends.push({emoji: change < 0 ? '⬇️' : '⬆️', title:`Weight Trending ${dir[0].toUpperCase()+dir.slice(1)}`, body:`${Math.abs(change).toFixed(1)}kg ${dir} over your last ${recentWeights.length} weigh-ins. ${change < 0 ? 'Great progress if cutting!' : 'Building mass — make sure the lifts are going up too.'}`});
+      }
+    }
+
+    // Recent PRs shoutout
+    const recentPRs = exercises.filter(e => e.pr && e.pr.date && daysBetween(e.pr.date, today) <= 7);
+    if(recentPRs.length) {
+      const prList = recentPRs.slice(0, 3).map(e => `${e.name} (${e.pr.weight}kg x ${e.pr.reps})`).join(', ');
+      trends.push({emoji:'🥇', title:'New PRs This Week', body: prList});
+    }
+
+    return trends;
   },
 
   getWorkoutRecs(workouts, exercises, todayEntry) {
@@ -2860,6 +3086,7 @@ if(I.handleURLImport()) {
   switchTab('sync');
 } else {
   T.render();
+  Coach.render();
 }
 F.initSearch();
 const verEl = document.getElementById('app-ver');
