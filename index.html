@@ -431,6 +431,17 @@ textarea{resize:vertical;min-height:80px}
     <h3>Sync History</h3>
     <div id="import-history" class="muted">No syncs yet</div>
   </div>
+
+  <div class="card">
+    <h3>Data Backup</h3>
+    <div class="muted small" style="margin-bottom:10px">Your data is automatically backed up. Download a copy for extra safety, or restore from a file.</div>
+    <div id="backup-status" class="muted small" style="margin-bottom:10px"></div>
+    <div class="row">
+      <button class="btn btn-primary btn-sm" style="flex:1" onclick="Backup.exportJSON()">Download Backup</button>
+      <button class="btn btn-secondary btn-sm" style="flex:1" onclick="document.getElementById('restore-file').click()">Restore from File</button>
+    </div>
+    <input type="file" id="restore-file" accept=".json" style="display:none" onchange="Backup.importJSON(this.files[0])">
+  </div>
   <div class="muted" style="text-align:center;margin-top:16px;font-size:12px">FitTrack v<span id="app-ver"></span></div>
 </div>
 </div>
@@ -502,12 +513,121 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 33;
+const APP_VERSION = 34;
+
+/* ── IndexedDB Backup Layer ── */
+const Backup = {
+  _db: null,
+  _dbName: 'fittrack-backup',
+  _storeName: 'data',
+
+  async open() {
+    if(this._db) return this._db;
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(this._dbName, 1);
+      req.onupgradeneeded = () => req.result.createObjectStore(this._storeName);
+      req.onsuccess = () => { this._db = req.result; resolve(this._db); };
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async save(key, value) {
+    try {
+      const db = await this.open();
+      const tx = db.transaction(this._storeName, 'readwrite');
+      tx.objectStore(this._storeName).put(value, key);
+    } catch(e) { /* silent */ }
+  },
+
+  async saveAll() {
+    try {
+      const db = await this.open();
+      const tx = db.transaction(this._storeName, 'readwrite');
+      const store = tx.objectStore(this._storeName);
+      const snapshot = {};
+      for(let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if(k.startsWith('ft.')) {
+          snapshot[k] = localStorage.getItem(k);
+        }
+      }
+      store.put(snapshot, 'ft-snapshot');
+      store.put(new Date().toISOString(), 'ft-snapshot-time');
+    } catch(e) { /* silent */ }
+  },
+
+  async restore() {
+    try {
+      const db = await this.open();
+      return new Promise((resolve) => {
+        const tx = db.transaction(this._storeName, 'readonly');
+        const req = tx.objectStore(this._storeName).get('ft-snapshot');
+        req.onsuccess = () => {
+          const snapshot = req.result;
+          if(!snapshot || typeof snapshot !== 'object') { resolve(false); return; }
+          let restored = 0;
+          for(const [k, v] of Object.entries(snapshot)) {
+            if(k.startsWith('ft.') && !localStorage.getItem(k)) {
+              localStorage.setItem(k, v);
+              restored++;
+            }
+          }
+          resolve(restored > 0);
+        };
+        req.onerror = () => resolve(false);
+      });
+    } catch(e) { return false; }
+  },
+
+  async getSnapshotTime() {
+    try {
+      const db = await this.open();
+      return new Promise((resolve) => {
+        const tx = db.transaction(this._storeName, 'readonly');
+        const req = tx.objectStore(this._storeName).get('ft-snapshot-time');
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    } catch(e) { return null; }
+  },
+
+  exportJSON() {
+    const data = {};
+    for(let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if(k.startsWith('ft.')) data[k] = localStorage.getItem(k);
+    }
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `fittrack-backup-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+
+  importJSON(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = JSON.parse(e.target.result);
+        let count = 0;
+        for(const [k, v] of Object.entries(data)) {
+          if(k.startsWith('ft.')) { localStorage.setItem(k, v); count++; }
+        }
+        Backup.saveAll();
+        alert(`Restored ${count} items. Reloading...`);
+        window.location.reload();
+      } catch(err) { alert('Invalid backup file.'); }
+    };
+    reader.readAsText(file);
+  }
+};
 
 /* ── Storage helpers ── */
 const S = {
   get(k, def=null) { try { const v=localStorage.getItem('ft.'+k); return v?JSON.parse(v):def } catch{ return def } },
-  set(k, v) { localStorage.setItem('ft.'+k, JSON.stringify(v)) },
+  set(k, v) { localStorage.setItem('ft.'+k, JSON.stringify(v)); Backup.save('ft.'+k, JSON.stringify(v)); },
   today() { return new Date().toISOString().slice(0,10) }
 };
 
@@ -3159,30 +3279,45 @@ function drawMultiLineChart(canvas, series, opts={}) {
 /* ══════════════════════════════════════════
    INIT
    ══════════════════════════════════════════ */
-initExercises();
 
-if(I.handleURLImport()) {
-  switchTab('sync');
-} else {
-  T.render();
-  Coach.render();
-}
-F.initSearch();
-const verEl = document.getElementById('app-ver');
-if(verEl) verEl.textContent = APP_VERSION;
+// Auto-restore from IndexedDB if localStorage was wiped (e.g. by clearing site data)
+async function initApp() {
+  const hasData = localStorage.getItem('ft.exercises') || localStorage.getItem('ft.daily');
+  if(!hasData) {
+    const restored = await Backup.restore();
+    if(restored) {
+      console.log('FitTrack: Data restored from IndexedDB backup');
+    }
+  }
 
-if('serviceWorker' in navigator) {
-  const lastVer = parseInt(localStorage.getItem('ft.swVersion') || '0');
-  if(lastVer < APP_VERSION) {
-    // Nuclear cache clear on version bump — ensures both PWA and browser get fresh code
-    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
-    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.unregister()));
-    localStorage.setItem('ft.swVersion', String(APP_VERSION));
-    // Reload after clearing to get fresh SW registration
-    setTimeout(() => window.location.reload(), 500);
+  initExercises();
+
+  if(I.handleURLImport()) {
+    switchTab('sync');
   } else {
+    T.render();
+    Coach.render();
+  }
+  F.initSearch();
+  const verEl = document.getElementById('app-ver');
+  if(verEl) verEl.textContent = APP_VERSION;
+
+  // Show backup status on sync tab
+  const backupTime = await Backup.getSnapshotTime();
+  const statusEl = document.getElementById('backup-status');
+  if(statusEl && backupTime) {
+    const d = new Date(backupTime);
+    statusEl.textContent = `Last auto-backup: ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+  }
+
+  // Full backup to IndexedDB every 60 seconds while app is open
+  setInterval(() => Backup.saveAll(), 60000);
+  // Initial full backup
+  Backup.saveAll();
+
+  if('serviceWorker' in navigator) {
+    // Register SW — skipWaiting + claim in sw.js handles updates automatically
     navigator.serviceWorker.register('sw.js').then(reg => {
-      // Check for updates every time the app loads
       reg.update();
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
@@ -3192,16 +3327,17 @@ if('serviceWorker' in navigator) {
       });
     });
   }
-}
-// Show version in console for debugging sync issues
-console.log('FitTrack v' + APP_VERSION);
+  console.log('FitTrack v' + APP_VERSION);
 
-if('Notification' in window && Notification.permission === 'default') {
-  document.addEventListener('click', function once() {
-    Notification.requestPermission();
-    document.removeEventListener('click', once);
-  });
+  if('Notification' in window && Notification.permission === 'default') {
+    document.addEventListener('click', function once() {
+      Notification.requestPermission();
+      document.removeEventListener('click', once);
+    });
+  }
 }
+
+initApp();
 </script>
 </body>
 </html>
