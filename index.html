@@ -513,7 +513,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 35;
+const APP_VERSION = 36;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -3291,6 +3291,17 @@ async function initApp() {
   }
 
   initExercises();
+
+  // One-time seed of historical health data (remove after confirmed)
+  const seeded = S.get('_seeded_mar', false);
+  if(!seeded) {
+    [{date:'2026-03-09',steps:10427,distance:8.67,exerciseMins:76,activeCal:3862},
+     {date:'2026-03-10',steps:8340,distance:6.67,exerciseMins:103,activeCal:5689},
+     {date:'2026-03-11',steps:10896,distance:9.59,exerciseMins:60,activeCal:4766},
+     {date:'2026-03-12',steps:8494,distance:6.9,exerciseMins:62,activeCal:3923}
+    ].forEach(d => I.processImport(d));
+    S.set('_seeded_mar', true);
+  }
 
   if(I.handleURLImport()) {
     switchTab('sync');
