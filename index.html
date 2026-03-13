@@ -3318,6 +3318,28 @@ async function initApp() {
     }
     S.set('_seeded_workout_mar12', true);
   }
+  // Update exercise stats from seeded workout
+  const seededStats = S.get('_seeded_stats_mar12', false);
+  if(!seededStats) {
+    const exercises = S.get('exercises', []);
+    const statsMap = {
+      'Shoulder Press': {weight:5,reps:8},
+      'Dips': {weight:0,reps:12},
+      'Bench Press': {weight:45,reps:10},
+      'Tricep Pulldown': {weight:22.5,reps:8},
+      'Bicep Curl': {weight:22.5,reps:8}
+    };
+    for(const [name, best] of Object.entries(statsMap)) {
+      const ex = exercises.find(e => e.name === name);
+      if(ex) {
+        ex.lastWeight = best.weight;
+        ex.lastReps = best.reps;
+        if(!ex.pr || best.weight > ex.pr.weight) ex.pr = {weight:best.weight, reps:best.reps, date:'2026-03-12'};
+      }
+    }
+    S.set('exercises', exercises);
+    S.set('_seeded_stats_mar12', true);
+  }
 
   if(I.handleURLImport()) {
     switchTab('sync');
