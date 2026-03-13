@@ -513,7 +513,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 36;
+const APP_VERSION = 37;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -3301,6 +3301,22 @@ async function initApp() {
      {date:'2026-03-12',steps:8494,distance:6.9,exerciseMins:62,activeCal:3923}
     ].forEach(d => I.processImport(d));
     S.set('_seeded_mar', true);
+  }
+  // One-time seed of Mar 12 workout (remove after confirmed)
+  const seededW = S.get('_seeded_workout_mar12', false);
+  if(!seededW) {
+    const workouts = S.get('workouts', []);
+    if(!workouts.find(w => w.date === '2026-03-12')) {
+      workouts.push({id:'w_seed_0312', date:'2026-03-12', exercises:[
+        {name:'Shoulder Press', sets:[{weight:0,reps:8},{weight:5,reps:8},{weight:5,reps:8}]},
+        {name:'Dips', sets:[{weight:0,reps:12},{weight:0,reps:12},{weight:0,reps:12}]},
+        {name:'Bench Press', sets:[{weight:20,reps:12},{weight:22.5,reps:10},{weight:22.5,reps:10}]},
+        {name:'Tricep Pulldown', sets:[{weight:22.5,reps:8},{weight:22.5,reps:8},{weight:22.5,reps:8}]},
+        {name:'Bicep Curl', sets:[{weight:22.5,reps:8},{weight:22.5,reps:8},{weight:22.5,reps:8}]}
+      ], notes:''});
+      S.set('workouts', workouts);
+    }
+    S.set('_seeded_workout_mar12', true);
   }
 
   if(I.handleURLImport()) {
