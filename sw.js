@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fittrack-v31';
+const CACHE_NAME = 'fittrack-v32';
 const ASSETS = [
   './index.html',
   './manifest.webmanifest',
@@ -23,6 +23,18 @@ self.addEventListener('activate', e => {
 
 // Network-first: try to fetch fresh, fall back to cache for offline
 self.addEventListener('fetch', e => {
+  // Always fetch index.html from network to ensure version updates propagate
+  const url = new URL(e.request.url);
+  if(url.pathname.endsWith('/') || url.pathname.endsWith('index.html')) {
+    e.respondWith(
+      fetch(e.request).then(resp => {
+        const clone = resp.clone();
+        caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+        return resp;
+      }).catch(() => caches.match(e.request))
+    );
+    return;
+  }
   e.respondWith(
     fetch(e.request).then(resp => {
       const clone = resp.clone();
