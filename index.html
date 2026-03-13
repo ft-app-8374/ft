@@ -244,13 +244,6 @@ textarea{resize:vertical;min-height:80px}
     </div>
   </div>
 
-  <div class="card" id="gym-scanner-card">
-    <h3>Gym Scanner</h3>
-    <div class="muted small" style="margin-bottom:10px">Take a photo of your gym — AI will detect equipment and suggest a tailored workout</div>
-    <input type="file" id="gym-photo-input" accept="image/*" capture="environment" style="display:none" onchange="W.processGymPhoto(this)">
-    <button class="btn btn-primary btn-block btn-sm" onclick="document.getElementById('gym-photo-input').click()">Scan Gym Equipment</button>
-    <div id="gym-scan-result"></div>
-  </div>
 </div>
 </div>
 
@@ -509,7 +502,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 32;
+const APP_VERSION = 33;
 
 /* ── Storage helpers ── */
 const S = {
@@ -660,19 +653,6 @@ const T = {
     const d = this.viewDate;
     document.getElementById('today-date').textContent = d === S.today() ? 'Today' : fmtDate(d);
     const entry = this.getDaily(d);
-
-    // Emoji ratings
-    const emojiSets = {
-      energy: ['😴','😐','🙂','😊','⚡'],
-      sleep:  ['😵','😪','😐','😴','🌟'],
-      soreness: ['💪','🙂','😬','😖','🤕']
-    };
-    for(const [key, emojis] of Object.entries(emojiSets)) {
-      const row = document.getElementById(key+'-row');
-      row.innerHTML = emojis.map((e,i) =>
-        `<button class="emoji-btn ${entry[key]===i+1?'selected':''}" onclick="T.setRating('${key}',${i+1})">${e}</button>`
-      ).join('');
-    }
 
     // Health dashboard
     this.renderHealthDashboard(d);
