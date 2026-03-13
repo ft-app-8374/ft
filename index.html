@@ -398,8 +398,12 @@ textarea{resize:vertical;min-height:80px}
   <div class="card">
     <h3>Apple Health</h3>
     <p style="font-size:15px;line-height:1.6;margin-bottom:14px">
-      Run your iOS Shortcut, then tap Paste to import today's health data.
+      Run your iOS Shortcut, then tap Paste to import health data.
     </p>
+    <div style="margin-bottom:12px">
+      <label style="font-size:13px;color:#64748b;margin-bottom:4px;display:block">Import date</label>
+      <input type="date" id="import-date" style="width:100%">
+    </div>
     <button class="btn btn-primary btn-block" onclick="I.pasteFromClipboard()" style="font-size:18px;padding:18px">Paste from Health</button>
     <div class="spacer"></div>
     <div id="last-sync" class="muted" style="text-align:center"></div>
@@ -513,7 +517,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 34;
+const APP_VERSION = 35;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2251,6 +2255,9 @@ const I = {
     }
 
     // Sync history
+    const dateEl = document.getElementById('import-date');
+    if(dateEl && !dateEl.value) dateEl.value = S.today();
+
     const histEl = document.getElementById('import-history');
     if(histEl && health && health.syncLog) {
       histEl.innerHTML = health.syncLog.slice(-5).reverse().map(l =>
@@ -2331,6 +2338,8 @@ const I = {
     try {
       const text = await navigator.clipboard.readText();
       const data = JSON.parse(text);
+      const dateEl = document.getElementById('import-date');
+      if(dateEl && dateEl.value) data.date = dateEl.value;
       this.processImport(data);
       this.render();
       T.render();
