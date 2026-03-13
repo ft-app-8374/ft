@@ -509,7 +509,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 30;
+const APP_VERSION = 31;
 
 /* ── Storage helpers ── */
 const S = {
@@ -677,20 +677,60 @@ const T = {
     // Health dashboard
     this.renderHealthDashboard(d);
 
-    // Summary
+    // Summary — live dashboard with calories, food, and workout data
     const totalCal = entry.foods.reduce((a,f) => a+f.cal, 0);
+    const totalProtein = entry.foods.reduce((a,f) => a+(f.protein||0), 0);
+    const totalCarbs = entry.foods.reduce((a,f) => a+(f.carbs||0), 0);
+    const totalFat = entry.foods.reduce((a,f) => a+(f.fat||0), 0);
     const workouts = S.get('workouts', []).filter(w => w.date === d && w.source !== 'watch');
+    const watchWorkouts = S.get('workouts', []).filter(w => w.date === d && w.source === 'watch');
+
     let summary = '';
-    if(entry.energy) summary += `Energy: ${emojiSets.energy[entry.energy-1]} `;
-    if(entry.sleep) summary += `Sleep: ${emojiSets.sleep[entry.sleep-1]} `;
-    if(entry.soreness) summary += `Soreness: ${emojiSets.soreness[entry.soreness-1]}`;
-    if(summary) summary += '<br>';
-    summary += `Calories: <b>${totalCal}</b>`;
-    if(workouts.length) {
-      const totalSets = workouts.reduce((a,w) => a + w.exercises.reduce((b,e) => b+e.sets.length, 0), 0);
-      summary += ` | Exercises: <b>${workouts.reduce((a,w)=>a+w.exercises.length,0)}</b> (${totalSets} sets)`;
+    const hasFoods = entry.foods.length > 0;
+    const hasWorkouts = workouts.length > 0;
+    const hasWatchData = watchWorkouts.length > 0;
+    const hasAnything = hasFoods || hasWorkouts || hasWatchData || entry.energy || entry.sleep;
+
+    // Calories & food
+    if(hasFoods) {
+      summary += `<div style="display:flex;gap:16px;align-items:baseline;margin-bottom:6px">`;
+      summary += `<div><span style="font-size:24px;font-weight:700">${totalCal}</span> <span class="muted">cal</span></div>`;
+      if(totalProtein || totalCarbs || totalFat) {
+        summary += `<div class="muted small">P: ${totalProtein}g · C: ${totalCarbs}g · F: ${totalFat}g</div>`;
+      }
+      summary += `</div>`;
+      // Show recent food items
+      const recentFoods = entry.foods.slice(-3);
+      summary += `<div class="muted small" style="margin-bottom:4px">${recentFoods.map(f => `${f.name} (${f.cal})`).join(' · ')}${entry.foods.length > 3 ? ` · +${entry.foods.length-3} more` : ''}</div>`;
+    } else {
+      summary += `<div style="margin-bottom:6px"><span style="font-size:20px;font-weight:600">0</span> <span class="muted">cal logged</span></div>`;
     }
-    document.getElementById('today-summary').innerHTML = summary || '<span class="muted">Start logging to see your summary</span>';
+
+    // Workout data
+    if(hasWorkouts) {
+      const totalSets = workouts.reduce((a,w) => a + w.exercises.reduce((b,e) => b+e.sets.length, 0), 0);
+      const totalExercises = workouts.reduce((a,w)=>a+w.exercises.length,0);
+      const totalVolume = workouts.reduce((a,w) => a + w.exercises.reduce((b,e) => b + e.sets.reduce((c,s) => c + (s.weight||0) * (s.reps||0), 0), 0), 0);
+      summary += `<div style="display:flex;gap:16px;margin-top:8px;padding-top:8px;border-top:1px solid #334155">`;
+      summary += `<div><b>${totalExercises}</b> <span class="muted small">exercises</span></div>`;
+      summary += `<div><b>${totalSets}</b> <span class="muted small">sets</span></div>`;
+      if(totalVolume > 0) summary += `<div><b>${(totalVolume/1000).toFixed(1)}t</b> <span class="muted small">volume</span></div>`;
+      summary += `</div>`;
+    }
+
+    // Watch activity data
+    if(hasWatchData) {
+      const watchCals = watchWorkouts.reduce((a,w) => a + (w.calories || 0), 0);
+      const watchMins = watchWorkouts.reduce((a,w) => a + (w.duration || 0), 0);
+      if(watchCals || watchMins) {
+        summary += `<div style="display:flex;gap:16px;margin-top:6px" class="muted small">`;
+        if(watchCals) summary += `<div>🔥 ${watchCals} cal burned</div>`;
+        if(watchMins) summary += `<div>⏱ ${watchMins} min active</div>`;
+        summary += `</div>`;
+      }
+    }
+
+    document.getElementById('today-summary').innerHTML = summary || '<span class="muted">Start logging food or workouts to see your dashboard.</span>';
 
     // Insights
     this.renderInsights();
@@ -1354,6 +1394,46 @@ const W = {
 
   // ── Workout Generation ──
   generateWorkout(mins) {
+    // Show equipment picker first, then generate based on selection
+    this._pendingWorkoutMins = mins;
+    const el = document.getElementById('suggested-workout');
+
+    const allEquipment = [
+      {id:'barbell', name:'Barbell & Rack', icon:'🏋️'},
+      {id:'dumbbells', name:'Dumbbells', icon:'💪'},
+      {id:'cables', name:'Cable Machine', icon:'🔗'},
+      {id:'pullup', name:'Pull-up Bar', icon:'🔝'},
+      {id:'bench', name:'Bench', icon:'🪑'},
+      {id:'smith', name:'Smith Machine', icon:'⚙️'},
+      {id:'legpress', name:'Leg Press', icon:'🦵'},
+      {id:'treadmill', name:'Treadmill/Cardio', icon:'🏃'},
+      {id:'bands', name:'Resistance Bands', icon:'〰️'},
+      {id:'kettlebell', name:'Kettlebells', icon:'🔔'},
+      {id:'bodyweight', name:'Bodyweight Only', icon:'🧘'},
+    ];
+
+    // Restore last-used equipment selection
+    const lastEquip = S.get('lastEquipment', []);
+
+    let html = `<div style="font-weight:600;font-size:14px;margin-bottom:8px">${mins} min workout — what equipment do you have?</div>`;
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    allEquipment.forEach(eq => {
+      const isActive = lastEquip.includes(eq.id);
+      html += `<button class="pill gym-eq-btn${isActive?' active':''}" data-eq="${eq.id}" onclick="this.classList.toggle('active');this.style.background=this.classList.contains('active')?'#3b82f6':'';this.style.color=this.classList.contains('active')?'#fff':''" style="font-size:12px;padding:6px 10px;${isActive?'background:#3b82f6;color:#fff':''}">${eq.icon} ${eq.name}</button>`;
+    });
+    html += '</div>';
+    html += '<div style="margin-top:10px"><button class="btn btn-primary btn-block" onclick="W.generateWorkoutWithEquipment()">Generate Workout</button></div>';
+    el.innerHTML = html;
+  },
+
+  generateWorkoutWithEquipment() {
+    const selected = Array.from(document.querySelectorAll('#suggested-workout .gym-eq-btn.active')).map(b => b.dataset.eq);
+    if(!selected.length) { alert('Select at least one piece of equipment'); return; }
+
+    // Remember selection for next time
+    S.set('lastEquipment', selected);
+
+    const mins = this._pendingWorkoutMins || 30;
     const exercises = S.get('exercises', []);
     const workouts = S.get('workouts', []).filter(w => w.source !== 'watch');
     const today = S.today();
@@ -1386,51 +1466,85 @@ const W = {
       if(todayHRV.length && todayHRV[todayHRV.length-1].value < avgHRV * 0.8) recoveryOK = false;
     }
 
+    // Build exercise pool from selected equipment
+    const equipmentExercises = {
+      barbell: ['Barbell Squat','Deadlift','Barbell Row','Overhead Press','Bench Press','Barbell Curl'],
+      dumbbells: ['Dumbbell Press','Dumbbell Row','Lateral Raise','Dumbbell Curl','Dumbbell Lunge','Dumbbell Fly'],
+      cables: ['Cable Fly','Cable Row','Lat Pulldown','Tricep Pushdown','Face Pull','Cable Curl'],
+      pullup: ['Pull-ups','Chin-ups','Hanging Leg Raise'],
+      bench: ['Bench Press','Incline Press','Dumbbell Fly','Step-ups'],
+      smith: ['Smith Squat','Smith Bench','Smith Shoulder Press','Smith Calf Raise'],
+      legpress: ['Leg Press','Calf Raise','Single Leg Press'],
+      treadmill: ['Treadmill Intervals'],
+      bands: ['Banded Pull-apart','Banded Squat','Banded Push-up','Banded Row'],
+      kettlebell: ['Kettlebell Swing','Goblet Squat','Turkish Get-up','KB Clean & Press'],
+      bodyweight: ['Push-ups','Bodyweight Squat','Plank','Mountain Climbers','Burpees','Lunges'],
+    };
+
+    const catMap = {
+      'Bench Press':'push','Incline Press':'push','Dumbbell Press':'push','Dumbbell Fly':'push','Cable Fly':'push','Overhead Press':'push','Lateral Raise':'push','Smith Bench':'push','Smith Shoulder Press':'push','Push-ups':'push','Banded Push-up':'push','KB Clean & Press':'push',
+      'Barbell Row':'pull','Dumbbell Row':'pull','Cable Row':'pull','Lat Pulldown':'pull','Pull-ups':'pull','Chin-ups':'pull','Face Pull':'pull','Barbell Curl':'pull','Dumbbell Curl':'pull','Cable Curl':'pull','Banded Pull-apart':'pull','Banded Row':'pull','Tricep Pushdown':'push',
+      'Barbell Squat':'legs','Deadlift':'legs','Dumbbell Lunge':'legs','Leg Press':'legs','Smith Squat':'legs','Single Leg Press':'legs','Calf Raise':'legs','Smith Calf Raise':'legs','Bodyweight Squat':'legs','Lunges':'legs','Goblet Squat':'legs','Step-ups':'legs','Kettlebell Swing':'legs','Banded Squat':'legs',
+      'Hanging Leg Raise':'core','Plank':'core','Mountain Climbers':'core','Burpees':'core','Turkish Get-up':'core','Treadmill Intervals':'core',
+    };
+
+    // Build pool from available equipment
+    const pool = [];
+    selected.forEach(eq => {
+      (equipmentExercises[eq] || []).forEach(name => {
+        if(!pool.find(p => p.name === name)) {
+          const existing = exercises.find(e => e.name === name);
+          pool.push({
+            name,
+            weight: existing ? (existing.lastWeight || 0) : 0,
+            reps: existing ? (existing.lastReps || 8) : 10,
+            cat: catMap[name] || (existing ? existing.cat : 'push'),
+          });
+        }
+      });
+    });
+
+    // Categorize pool
+    const cats = {push:[], pull:[], legs:[], core:[]};
+    pool.forEach(p => { if(cats[p.cat]) cats[p.cat].push(p); });
+
     // Build the plan
-    const plan = [];
+    const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
     const setsPerExercise = mins <= 30 ? 3 : 4;
     const exerciseCount = mins <= 30 ? 4 : 6;
     const restTime = isLowEnergy || !recoveryOK ? 90 : 60;
 
-    // Select exercises — 2 from primary category, 1-2 from secondary, 1 core
     const primaryCat = catOrder[0];
     const secondaryCat = catOrder[1];
-    const primaryExs = exercises.filter(e => e.cat === primaryCat);
-    const secondaryExs = exercises.filter(e => e.cat === secondaryCat);
-    const coreExs = exercises.filter(e => e.cat === 'core');
-
-    // Shuffle and pick
-    const shuffle = arr => arr.slice().sort(() => Math.random() - 0.5);
     const picked = [];
 
-    // Primary — pick 2
-    shuffle(primaryExs).slice(0, 2).forEach(e => picked.push(e));
-    // Secondary — pick 1-2
-    shuffle(secondaryExs).slice(0, mins <= 30 ? 1 : 2).forEach(e => picked.push(e));
-    // Core — pick 1
-    if(coreExs.length) shuffle(coreExs).slice(0, 1).forEach(e => picked.push(e));
-    // Fill remaining from other categories if needed
+    // Pick from prioritized categories using available equipment
+    shuffle(cats[primaryCat] || []).slice(0, 2).forEach(e => picked.push(e));
+    shuffle(cats[secondaryCat] || []).slice(0, mins <= 30 ? 1 : 2).forEach(e => picked.push(e));
+    if(cats.core.length) shuffle(cats.core).slice(0, 1).forEach(e => picked.push(e));
+    // Fill remaining
     if(picked.length < exerciseCount) {
-      const remaining = exercises.filter(e => !picked.find(p => p.name === e.name));
+      const remaining = pool.filter(p => !picked.find(x => x.name === p.name));
       shuffle(remaining).slice(0, exerciseCount - picked.length).forEach(e => picked.push(e));
     }
 
-    picked.forEach(ex => {
-      const weight = ex.lastWeight || 0;
-      const reps = isLowEnergy ? Math.max(6, (ex.lastReps || 8)) : (ex.lastReps || 8);
-      plan.push({
-        name: ex.name,
-        sets: setsPerExercise,
-        reps: reps,
-        weight: weight,
-        rest: ex.cat === 'core' ? 60 : restTime,
-        done: false,
-        cat: ex.cat,
-        tips: ex.tips || [],
-        muscles: ex.muscles || [],
-        video: ex.video || ''
-      });
-    });
+    if(!picked.length) {
+      document.getElementById('suggested-workout').innerHTML = '<div class="muted" style="padding:8px">No matching exercises found. Try selecting different equipment.</div>';
+      return;
+    }
+
+    const plan = picked.map(p => ({
+      name: p.name,
+      sets: setsPerExercise,
+      reps: isLowEnergy ? Math.max(6, p.reps) : p.reps,
+      weight: p.weight,
+      rest: p.cat === 'core' ? 60 : restTime,
+      done: false,
+      cat: p.cat,
+      tips: [],
+      muscles: [],
+      video: ''
+    }));
 
     // Compute time estimate
     const totalSets = plan.reduce((a,p) => a+p.sets, 0);
@@ -1447,7 +1561,7 @@ const W = {
     const el = document.getElementById('suggested-workout');
     const s = this._lastSuggestion;
     if(!s) {
-      el.innerHTML = '<div class="muted" style="text-align:center">Tap 30 or 60 min to get a personalized workout plan based on your training history, energy, and recovery.</div>';
+      el.innerHTML = '<div class="muted" style="text-align:center">Tap 30 or 60 min — select your available equipment and get a personalized workout.</div>';
       return;
     }
 
