@@ -995,9 +995,14 @@ const T = {
     // Health trends
     const health = S.get('healthImport', null);
     if(health) {
-      const recentSteps = (health.steps || []).slice(-7);
+      // Deduplicate steps by date (take max per day)
+      const stepsByDate = {};
+      (health.steps || []).forEach(r => {
+        if(!stepsByDate[r.date] || r.value > stepsByDate[r.date]) stepsByDate[r.date] = r.value;
+      });
+      const recentSteps = Object.entries(stepsByDate).sort((a,b) => b[0].localeCompare(a[0])).slice(0, 7);
       if(recentSteps.length >= 3) {
-        const avgSteps = Math.round(recentSteps.reduce((a,r) => a+r.value, 0) / recentSteps.length);
+        const avgSteps = Math.round(recentSteps.reduce((a,r) => a+r[1], 0) / recentSteps.length);
         html += `<div class="insight-card"><div class="insight-title">Avg Steps (${recentSteps.length}d)</div>
           <div class="insight-body"><b>${avgSteps.toLocaleString()}</b> steps/day</div></div>`;
       }
@@ -2277,13 +2282,14 @@ const I = {
   },
 
   processImport(data) {
-    const today = data.date || S.today();
+    const importDate = data.date || S.today();
     const health = S.get('healthImport', {steps:[], heartRate:[], sleep:[], activeCal:[], weight:[], restingHR:[], hrv:[], vo2max:[], exerciseMins:[], distance:[], standHours:[], restingEnergy:[], standMins:[], syncLog:[], lastImport:null});
 
     const allFields = ['steps','heartRate','sleep','activeCal','weight','restingHR','hrv','vo2max','exerciseMins','distance','standHours','restingEnergy','standMins'];
     allFields.forEach(f => {
       if(!health[f]) health[f] = [];
-      health[f] = health[f].filter(r => r.date !== today);
+      // Remove existing entries for this date (prevents duplicates on re-import)
+      health[f] = health[f].filter(r => r.date !== importDate);
     });
 
     const fieldMap = {steps:'steps', heartRate:'heartRate', sleep:'sleep', activeCal:'activeCal',
@@ -2686,11 +2692,15 @@ const Coach = {
       recs.push({title:'Rest Day Needed', body: `${consecutive} consecutive training days. Schedule a rest day — muscles grow during recovery, not during training.`});
     }
 
-    // Steps / activity
+    // Steps / activity (deduplicate by date — take max per day)
     if(health && health.steps) {
-      const recentSteps = health.steps.filter(r => daysBetween(r.date, today) <= 7);
+      const stepsByDate = {};
+      health.steps.filter(r => daysBetween(r.date, today) <= 7).forEach(r => {
+        if(!stepsByDate[r.date] || r.value > stepsByDate[r.date]) stepsByDate[r.date] = r.value;
+      });
+      const recentSteps = Object.values(stepsByDate);
       if(recentSteps.length >= 3) {
-        const avgSteps = recentSteps.reduce((a,r) => a+r.value, 0) / recentSteps.length;
+        const avgSteps = recentSteps.reduce((a,v) => a+v, 0) / recentSteps.length;
         if(avgSteps < 5000) {
           recs.push({title:'Move More', body: `Averaging ${Math.round(avgSteps).toLocaleString()} steps/day. Aim for 8,000-10,000. Low daily movement reduces overall calorie burn and recovery quality.`});
         } else if(avgSteps > 12000) {
@@ -2997,7 +3007,13 @@ const C = {
   renderSteps(canvas) {
     const health = S.get('healthImport', null);
     if(!health || !health.steps || !health.steps.length) { clearCanvas(canvas, 'No step data. Sync from Apple Health.'); return; }
-    let data = health.steps.map(r => ({x: r.date, y: Math.round(r.value)})).sort((a,b) => a.x.localeCompare(b.x));
+    // Deduplicate by date — take the max value per day (prevents double-counting from multiple imports)
+    const byDate = {};
+    health.steps.forEach(r => {
+      const v = Math.round(r.value);
+      if(!byDate[r.date] || v > byDate[r.date]) byDate[r.date] = v;
+    });
+    let data = Object.entries(byDate).map(([x,y]) => ({x, y})).sort((a,b) => a.x.localeCompare(b.x));
     data = this.filterByRange(data);
     if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 days of step data'); return; }
     drawBarChart(canvas, data, {color:'#3b82f6', label:'steps'});
