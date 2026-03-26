@@ -513,7 +513,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 37;
+const APP_VERSION = 38;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2298,7 +2298,7 @@ const I = {
     for(const [key, field] of Object.entries(fieldMap)) {
       if(data[key] !== undefined && data[key] !== null && data[key] !== '') {
         const val = parseFloat(data[key]);
-        if(!isNaN(val) && val > 0) health[field].push({date: today, value: field === 'distance' ? Math.round(val*100)/100 : Math.round(val*10)/10});
+        if(!isNaN(val) && val > 0) health[field].push({date: importDate, value: field === 'distance' ? Math.round(val*100)/100 : Math.round(val*10)/10});
       }
     }
 
@@ -2307,9 +2307,9 @@ const I = {
       const w = Math.round(parseFloat(data.weight)*10)/10;
       if(w > 0) {
         const measurements = S.get('measurements', []);
-        const idx = measurements.findIndex(m => m.date === today);
+        const idx = measurements.findIndex(m => m.date === importDate);
         if(idx >= 0) measurements[idx].weight = w;
-        else measurements.push({date: today, weight: w});
+        else measurements.push({date: importDate, weight: w});
         measurements.sort((a,b) => a.date.localeCompare(b.date));
         S.set('measurements', measurements);
       }
@@ -2326,7 +2326,7 @@ const I = {
     if(data.weight) parts.push(`${(Math.round(data.weight*10)/10)}kg`);
     if(data.exerciseMins) parts.push(`${Math.round(data.exerciseMins)}m exercise`);
     if(data.distance) parts.push(`${(Math.round(data.distance*10)/10)}km`);
-    health.syncLog.push({date: today, summary: parts.join(' | ') || 'Synced'});
+    health.syncLog.push({date: importDate, summary: parts.join(' | ') || 'Synced'});
     if(health.syncLog.length > 30) health.syncLog = health.syncLog.slice(-30);
 
     health.lastImport = new Date().toISOString();
