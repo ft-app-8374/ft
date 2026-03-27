@@ -398,28 +398,12 @@ textarea{resize:vertical;min-height:80px}
   <div class="card">
     <h3>Apple Health</h3>
     <p style="font-size:15px;line-height:1.6;margin-bottom:14px">
-      Run your iOS Shortcut, then tap Paste to import today's health data.
+      Run your iOS Shortcut, then tap Paste. Supports single day or bulk (up to 7 days at once).
     </p>
     <button class="btn btn-primary btn-block" onclick="I.pasteFromClipboard()" style="font-size:18px;padding:18px">Paste from Health</button>
     <div class="spacer"></div>
+    <div id="backfill-missing" style="margin-top:12px"></div>
     <div id="last-sync" class="muted" style="text-align:center"></div>
-  </div>
-
-  <div class="card">
-    <h3>Backfill Past Days</h3>
-    <p style="font-size:14px;line-height:1.5;margin-bottom:10px">
-      Recover missed days. Select a date, run the Recovery Shortcut for that date, then paste.
-    </p>
-    <div id="backfill-missing" style="margin-bottom:12px"></div>
-    <div class="measure-input">
-      <label>Date</label>
-      <input type="date" id="backfill-date" style="font-size:16px">
-    </div>
-    <button class="btn btn-primary btn-block" onclick="I.pasteForDate()" style="font-size:16px;padding:14px">Paste for Selected Date</button>
-    <div class="spacer"></div>
-    <p style="font-size:13px;color:#888;line-height:1.5">
-      <strong>Tip:</strong> You can also enter data manually below for any date — just set the date here first, then use Manual Entry.
-    </p>
   </div>
 
   <div class="card">
@@ -530,7 +514,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 39;
+const APP_VERSION = 40;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2297,8 +2281,11 @@ const I = {
     if(!importData) return false;
     try {
       const json = decodeURIComponent(atob(importData));
-      const data = JSON.parse(json);
-      this.processImport(data);
+      const parsed = JSON.parse(json);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      for(const data of items) {
+        if(data && typeof data === 'object') this.processImport(data);
+      }
       window.history.replaceState({}, '', window.location.pathname);
       return true;
     } catch(e) {
@@ -2362,12 +2349,22 @@ const I = {
   async pasteFromClipboard() {
     try {
       const text = await navigator.clipboard.readText();
-      const data = JSON.parse(text);
-      this.processImport(data);
+      const parsed = JSON.parse(text);
+      // Accept single object or array of objects
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      let count = 0;
+      for(const data of items) {
+        if(data && typeof data === 'object') {
+          this.processImport(data);
+          count++;
+        }
+      }
       this.render();
       T.render();
       Coach.refreshIfVisible();
-      showModal(`<h3>Synced!</h3><p style="font-size:15px">Health data imported successfully.</p>
+      this.renderMissingDays();
+      const msg = count > 1 ? `${count} days imported successfully.` : 'Health data imported successfully.';
+      showModal(`<h3>Synced!</h3><p style="font-size:15px">${msg}</p>
         <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
     } catch(e) {
       showModal(`<h3>Paste Failed</h3><p style="font-size:15px">Couldn't read health data from clipboard. Make sure you ran the Shortcut first.</p>
