@@ -517,7 +517,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 42;
+const APP_VERSION = 43;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2365,10 +2365,13 @@ const I = {
       try {
         parsed = JSON.parse(text);
       } catch(_) {
-        // Fix: trailing commas, unwrapped {},{} lists, trailing/leading junk
-        let fixed = text.replace(/,\s*([}\]])/g, '$1');  // trailing commas
+        // Fix common Shortcut quirks
+        let fixed = text;
+        fixed = fixed.replace(/:\s*,/g, ':null,');       // empty values like "key":,
+        fixed = fixed.replace(/:\s*}/g, ':null}');        // empty values at end like "key":}
+        fixed = fixed.replace(/,\s*([}\]])/g, '$1');      // trailing commas
         if(/^\s*\{/.test(fixed) && !/^\s*\[/.test(fixed)) {
-          fixed = '[' + fixed + ']';  // wrap bare {},{} in array
+          fixed = '[' + fixed + ']';                       // wrap bare {},{} in array
         }
         parsed = JSON.parse(fixed);
       }
