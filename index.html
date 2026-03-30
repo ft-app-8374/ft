@@ -6,7 +6,7 @@
   <title>FitTrack</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0f172a">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://world.openfoodfacts.org; connect-src 'self' https://world.openfoodfacts.org https://generativelanguage.googleapis.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; media-src 'self' blob:; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://world.openfoodfacts.org; connect-src 'self' https://world.openfoodfacts.org https://generativelanguage.googleapis.com https://api.groq.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; media-src 'self' blob:; worker-src 'self' blob:">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -518,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 50;
+const APP_VERSION = 51;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -1142,12 +1142,13 @@ const F = {
       return;
     }
 
-    const apiKey = S.get('geminiKey', '');
-    if(!apiKey) {
+    const groqKey = S.get('groqKey', '');
+    const geminiKey = S.get('geminiKey', '');
+    if(!groqKey && !geminiKey) {
       const s = statusEl || el;
       s.innerHTML = (el.innerHTML.includes('Your Foods') ? el.innerHTML.replace(/<div class="search-loading"[^>]*>.*?<\/div>$/s, '') : '') +
         '<div style="padding:10px;font-size:13px;color:#f59e0b;background:#1e293b;border-radius:8px;margin-top:8px">' +
-        'AI food search needs a Gemini API key. <a href="#" onclick="F.showKeySetup();return false" style="color:#3b82f6;text-decoration:underline">Set up now</a> (free)</div>';
+        'AI food search needs an API key. <a href="#" onclick="F.showKeySetup();return false" style="color:#3b82f6;text-decoration:underline">Set up now</a> (free)</div>';
       return;
     }
 
@@ -1159,23 +1160,38 @@ const F = {
       statusEl.textContent = 'Estimating nutrition...';
     }
 
-    try {
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          contents: [{parts: [{text: `Estimate the nutritional content of: "${query}"
+    const prompt = `Estimate the nutritional content of: "${query}"
 
 Break into individual food items. For each item return: name (short, readable), cal (total kcal for the serving), protein (grams), carbs (grams), fat (grams), serving (brief description like "1 plate", "250ml", "2 large").
 
 Use typical serving sizes unless the user specified amounts. Be realistic.
 
-Return ONLY a JSON array: [{"name":"...","cal":...,"protein":...,"carbs":...,"fat":...,"serving":"..."}]`}]}],
-          generationConfig: {temperature: 0.2, maxOutputTokens: 1024}
-        })
-      });
-      const data = await resp.json();
-      const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+Return ONLY a JSON array: [{"name":"...","cal":...,"protein":...,"carbs":...,"fat":...,"serving":"..."}]`;
+
+    try {
+      let text = '';
+      if(groqKey) {
+        const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey},
+          body: JSON.stringify({model: 'llama-3.3-70b-versatile', messages: [{role: 'user', content: prompt}], temperature: 0.2, max_tokens: 1024})
+        });
+        const data = await resp.json();
+        if(data.error) throw new Error(data.error.message || 'Groq error');
+        text = (data.choices?.[0]?.message?.content || '').trim();
+      } else {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            contents: [{parts: [{text: prompt}]}],
+            generationConfig: {temperature: 0.2, maxOutputTokens: 1024}
+          })
+        });
+        const data = await resp.json();
+        if(data.error) throw new Error(data.error.message || 'Gemini error');
+        text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+      }
       const jsonMatch = text.match(/\[[\s\S]*\]/);
       if(!jsonMatch) throw new Error('No results');
       const items = JSON.parse(jsonMatch[0]);
@@ -1185,7 +1201,7 @@ Return ONLY a JSON array: [{"name":"...","cal":...,"protein":...,"carbs":...,"fa
       const s = document.getElementById('api-search-status');
       if(s) s.textContent = 'Estimation failed. Try again or add manually.';
       else if(!el.innerHTML.includes('Your Foods')) {
-        el.innerHTML = '<div class="muted small" style="padding:8px">Estimation failed. Check connection or add manually.</div>';
+        el.innerHTML = '<div class="muted small" style="padding:8px">Estimation failed: ' + e.message + '</div>';
       }
     }
   },
@@ -1241,13 +1257,21 @@ Return ONLY a JSON array: [{"name":"...","cal":...,"protein":...,"carbs":...,"fa
   },
 
   showKeySetup() {
-    const current = S.get('geminiKey', '');
+    const groq = S.get('groqKey', '');
+    const gemini = S.get('geminiKey', '');
     showModal(`
       <h3>AI Food Search Setup</h3>
-      <p style="font-size:14px;line-height:1.5;margin-bottom:12px">Enter your free Gemini API key. Get one at <b>aistudio.google.com/apikey</b></p>
-      <input id="gemini-key-input" type="password" placeholder="Paste API key here" value="${current}" style="font-size:16px;width:100%;box-sizing:border-box">
+      <p style="font-size:14px;line-height:1.5;margin-bottom:12px">Enter an API key (Groq is recommended — fast and free).</p>
+      <div class="measure-input" style="margin-bottom:8px">
+        <label style="width:70px">Groq</label>
+        <input id="groq-key-input" type="password" placeholder="Groq API key" value="${groq}" style="font-size:14px">
+      </div>
+      <div class="measure-input">
+        <label style="width:70px">Gemini</label>
+        <input id="gemini-key-input" type="password" placeholder="Gemini API key (fallback)" value="${gemini}" style="font-size:14px">
+      </div>
       <div class="spacer"></div>
-      <button class="btn btn-primary btn-block" onclick="S.set('geminiKey',document.getElementById('gemini-key-input').value.trim());closeModalForce()">Save</button>
+      <button class="btn btn-primary btn-block" onclick="S.set('groqKey',document.getElementById('groq-key-input').value.trim());S.set('geminiKey',document.getElementById('gemini-key-input').value.trim());closeModalForce()">Save</button>
     `);
   },
 
