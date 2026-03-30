@@ -397,10 +397,13 @@ textarea{resize:vertical;min-height:80px}
 
   <div class="card">
     <h3>Apple Health</h3>
-    <p style="font-size:15px;line-height:1.6;margin-bottom:14px">
-      Run your iOS Shortcut, then tap Paste. Supports single day or bulk (up to 7 days at once).
+    <p style="font-size:15px;line-height:1.6;margin-bottom:10px">
+      Run your iOS Shortcut, then paste the data below. Works with single day or bulk (up to 7 days).
     </p>
-    <button class="btn btn-primary btn-block" onclick="I.pasteFromClipboard()" style="font-size:18px;padding:18px">Paste from Health</button>
+    <textarea id="health-paste-box" rows="4" placeholder="Tap here, then long-press → Paste" style="font-size:14px;width:100%;border:2px dashed #4a7;border-radius:10px;padding:12px;background:#f0faf4;font-family:monospace;resize:none;box-sizing:border-box"></textarea>
+    <div class="spacer" style="height:8px"></div>
+    <button class="btn btn-primary btn-block" onclick="I.importFromTextarea()" style="font-size:18px;padding:18px">Import Health Data</button>
+    <div id="paste-error" style="display:none;color:#c55;font-size:13px;margin-top:8px;padding:8px;background:#fff3f3;border-radius:8px"></div>
     <div class="spacer"></div>
     <div id="backfill-missing" style="margin-top:12px"></div>
     <div id="last-sync" class="muted" style="text-align:center"></div>
@@ -514,7 +517,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 40;
+const APP_VERSION = 41;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2346,11 +2349,18 @@ const I = {
     S.set('healthImport', health);
   },
 
-  async pasteFromClipboard() {
+  importFromTextarea() {
+    const box = document.getElementById('health-paste-box');
+    const errEl = document.getElementById('paste-error');
+    errEl.style.display = 'none';
+    const text = (box.value || '').trim();
+    if(!text) {
+      errEl.textContent = 'Nothing to import. Paste your health data into the box above first.';
+      errEl.style.display = 'block';
+      return;
+    }
     try {
-      const text = await navigator.clipboard.readText();
       const parsed = JSON.parse(text);
-      // Accept single object or array of objects
       const items = Array.isArray(parsed) ? parsed : [parsed];
       let count = 0;
       for(const data of items) {
@@ -2359,6 +2369,12 @@ const I = {
           count++;
         }
       }
+      if(count === 0) {
+        errEl.textContent = 'No valid health records found in the pasted data.';
+        errEl.style.display = 'block';
+        return;
+      }
+      box.value = '';
       this.render();
       T.render();
       Coach.refreshIfVisible();
@@ -2367,33 +2383,8 @@ const I = {
       showModal(`<h3>Synced!</h3><p style="font-size:15px">${msg}</p>
         <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
     } catch(e) {
-      showModal(`<h3>Paste Failed</h3><p style="font-size:15px">Couldn't read health data from clipboard. Make sure you ran the Shortcut first.</p>
-        <div class="spacer"></div><button class="btn btn-secondary btn-block" onclick="closeModalForce()">OK</button>`);
-    }
-  },
-
-  async pasteForDate() {
-    const dateEl = document.getElementById('backfill-date');
-    const targetDate = dateEl.value;
-    if(!targetDate) {
-      showModal(`<h3>Select a Date</h3><p style="font-size:15px">Pick a date first, then paste.</p>
-        <div class="spacer"></div><button class="btn btn-secondary btn-block" onclick="closeModalForce()">OK</button>`);
-      return;
-    }
-    try {
-      const text = await navigator.clipboard.readText();
-      const data = JSON.parse(text);
-      data.date = targetDate;
-      this.processImport(data);
-      this.render();
-      T.render();
-      Coach.refreshIfVisible();
-      this.renderMissingDays();
-      showModal(`<h3>Synced!</h3><p style="font-size:15px">Health data imported for ${fmtDate(targetDate)}.</p>
-        <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
-    } catch(e) {
-      showModal(`<h3>Paste Failed</h3><p style="font-size:15px">Couldn't read health data from clipboard. Make sure you ran the Shortcut first.</p>
-        <div class="spacer"></div><button class="btn btn-secondary btn-block" onclick="closeModalForce()">OK</button>`);
+      errEl.textContent = 'Invalid data format. Expected JSON from the Health Shortcut. Error: ' + e.message;
+      errEl.style.display = 'block';
     }
   },
 
@@ -2411,15 +2402,16 @@ const I = {
     if(missing.length === 0) {
       el.innerHTML = '<div style="color:#4a7; font-size:14px">All recent days have data.</div>';
     } else {
-      el.innerHTML = '<div style="font-size:13px;color:#c55;margin-bottom:6px">Missing data for:</div>' +
-        missing.map(d => `<span onclick="document.getElementById('backfill-date').value='${d}'" style="display:inline-block;background:#fff3f3;color:#c55;border:1px solid #e99;border-radius:6px;padding:3px 10px;margin:2px 4px 2px 0;font-size:13px;cursor:pointer">${fmtDate(d)}</span>`).join('');
+      el.innerHTML = '<div style="font-size:13px;color:#c55;margin-bottom:6px">Missing data for: ' +
+        missing.map(d => `<span style="display:inline-block;background:#fff3f3;color:#c55;border:1px solid #e99;border-radius:6px;padding:3px 8px;margin:2px 3px 2px 0;font-size:12px">${fmtDate(d)}</span>`).join('') + '</div>' +
+        '<div style="font-size:12px;color:#888;margin-top:4px">Run your Shortcut for these dates and paste bulk data above.</div>';
     }
   },
 
   saveManual() {
     const data = {};
-    const backfillDate = document.getElementById('backfill-date').value;
-    if(backfillDate) data.date = backfillDate;
+    const bfEl = document.getElementById('backfill-date');
+    if(bfEl && bfEl.value) data.date = bfEl.value;
     const steps = document.getElementById('manual-steps').value;
     const hr = document.getElementById('manual-hr').value;
     const sleep = document.getElementById('manual-sleep').value;
@@ -2438,7 +2430,7 @@ const I = {
     document.getElementById('manual-hr').value = '';
     document.getElementById('manual-sleep').value = '';
     document.getElementById('manual-active-cal').value = '';
-    const label = backfillDate ? fmtDate(backfillDate) : 'today';
+    const label = data.date ? fmtDate(data.date) : 'today';
     showModal(`<h3>Saved!</h3><p style="font-size:15px">Health data saved for ${label}.</p>
       <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
   }
