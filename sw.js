@@ -23,11 +23,11 @@ self.addEventListener('activate', e => {
 
 // Network-first: try to fetch fresh, fall back to cache for offline
 self.addEventListener('fetch', e => {
-  // Always fetch index.html from network to ensure version updates propagate
   const url = new URL(e.request.url);
-  if(url.pathname.endsWith('/') || url.pathname.endsWith('index.html')) {
+  // HTML pages: always bypass HTTP cache, fall back to SW cache only if offline
+  if(url.pathname.endsWith('/') || url.pathname.endsWith('index.html') || url.pathname.endsWith('.html')) {
     e.respondWith(
-      fetch(e.request).then(resp => {
+      fetch(e.request, {cache: 'no-cache'}).then(resp => {
         const clone = resp.clone();
         caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
         return resp;
