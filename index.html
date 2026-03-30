@@ -400,7 +400,7 @@ textarea{resize:vertical;min-height:80px}
     <p style="font-size:15px;line-height:1.6;margin-bottom:10px">
       Run your iOS Shortcut, then paste the data below. Works with single day or bulk (up to 7 days).
     </p>
-    <textarea id="health-paste-box" rows="4" placeholder="Tap here, then long-press → Paste" style="font-size:14px;width:100%;border:2px dashed #4a7;border-radius:10px;padding:12px;background:#f0faf4;font-family:monospace;resize:none;box-sizing:border-box"></textarea>
+    <textarea id="health-paste-box" rows="4" placeholder="Tap here, then long-press → Paste" style="font-size:14px;width:100%;border:2px dashed #4a7;border-radius:10px;padding:12px;background:#f0faf4;color:#111;font-family:monospace;resize:none;box-sizing:border-box"></textarea>
     <div class="spacer" style="height:8px"></div>
     <button class="btn btn-primary btn-block" onclick="I.importFromTextarea()" style="font-size:18px;padding:18px">Import Health Data</button>
     <div id="paste-error" style="display:none;color:#c55;font-size:13px;margin-top:8px;padding:8px;background:#fff3f3;border-radius:8px"></div>
@@ -517,7 +517,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 41;
+const APP_VERSION = 42;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2360,7 +2360,18 @@ const I = {
       return;
     }
     try {
-      const parsed = JSON.parse(text);
+      // Try strict JSON first, then fix common Shortcut quirks
+      let parsed;
+      try {
+        parsed = JSON.parse(text);
+      } catch(_) {
+        // Fix: trailing commas, unwrapped {},{} lists, trailing/leading junk
+        let fixed = text.replace(/,\s*([}\]])/g, '$1');  // trailing commas
+        if(/^\s*\{/.test(fixed) && !/^\s*\[/.test(fixed)) {
+          fixed = '[' + fixed + ']';  // wrap bare {},{} in array
+        }
+        parsed = JSON.parse(fixed);
+      }
       const items = Array.isArray(parsed) ? parsed : [parsed];
       let count = 0;
       for(const data of items) {
