@@ -434,6 +434,9 @@ textarea{resize:vertical;min-height:80px}
   <div class="card">
     <h3>Sync History</h3>
     <div id="import-history" class="muted">No syncs yet</div>
+    <div class="spacer"></div>
+    <button class="btn btn-secondary btn-sm" onclick="(function(){var h=JSON.parse(localStorage.getItem('ft.healthImport')||'{}');var s=(h.steps||[]).map(function(r){return r.date+': '+r.value}).join('\n');document.getElementById('debug-dates').textContent=s||'No step data found';document.getElementById('debug-dates').style.display='block'})()">Show stored dates</button>
+    <pre id="debug-dates" style="display:none;font-size:11px;margin-top:8px;max-height:200px;overflow:auto;background:#1e293b;padding:8px;border-radius:6px;color:#e2e8f0"></pre>
   </div>
 
   <div class="card">
@@ -518,7 +521,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 45;
+const APP_VERSION = 46;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
