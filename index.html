@@ -253,7 +253,7 @@ textarea{resize:vertical;min-height:80px}
   <h2 style="margin-bottom:12px">Food</h2>
 
   <div class="card">
-    <h3>Search</h3>
+    <h3 style="display:flex;justify-content:space-between;align-items:center">Search <button class="btn-icon" onclick="F.showKeySetup()" style="font-size:16px;opacity:.5" title="AI settings">&#9881;</button></h3>
     <div class="food-search-wrap">
       <input id="food-search" placeholder="Describe what you ate..." autocomplete="off" autocorrect="off">
       <button class="food-search-clear hidden" id="food-search-clear" onclick="F.clearSearch()">&times;</button>
@@ -518,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 51;
+const APP_VERSION = 52;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
