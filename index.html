@@ -521,7 +521,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 47;
+const APP_VERSION = 48;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2404,7 +2404,7 @@ const I = {
       const importedDates = items.filter(d=>d.date).map(d=>d.date).sort();
       const msg = count > 1 ? `${count} days imported.` : 'Health data imported.';
       showModal(`<h3>Synced!</h3><p style="font-size:15px">${msg}</p>
-        <div style="font-size:11px;color:#94a3b8;margin-top:8px;text-align:left"><b>Imported dates:</b> ${importedDates.join(', ') || 'none'}<br><b>Stored step dates:</b> ${storedDates.join(', ')}</div>
+        <div style="font-size:11px;color:#94a3b8;margin-top:8px;text-align:left"><b>Pasted length:</b> ${text.length} chars<br><b>Items parsed:</b> ${items.length}<br><b>Imported dates:</b> ${importedDates.join(', ') || 'none'}<br><b>Stored step dates:</b> ${storedDates.join(', ')}</div>
         <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
     } catch(e) {
       errEl.textContent = 'Invalid data format. Expected JSON from the Health Shortcut. Error: ' + e.message;
