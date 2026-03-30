@@ -481,6 +481,7 @@ textarea{resize:vertical;min-height:80px}
 </main>
 
 <!-- ── TAB BAR ── -->
+<div id="version-badge" style="position:fixed;top:6px;right:8px;font-size:10px;color:#64748b;background:rgba(30,41,59,.7);padding:2px 7px;border-radius:8px;z-index:100;font-family:monospace">v<span id="app-ver-badge"></span></div>
 <nav id="tab-bar">
   <button class="active" data-tab="today" onclick="switchTab('today')">
     <span class="tab-icon">&#127968;</span><span>Today</span>
@@ -517,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 43;
+const APP_VERSION = 44;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -3441,8 +3442,7 @@ async function initApp() {
     Coach.render();
   }
   F.initSearch();
-  const verEl = document.getElementById('app-ver');
-  if(verEl) verEl.textContent = APP_VERSION;
+  document.querySelectorAll('#app-ver, #app-ver-badge').forEach(el => el.textContent = APP_VERSION);
 
   // Show backup status on sync tab
   const backupTime = await Backup.getSnapshotTime();
