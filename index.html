@@ -518,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 52;
+const APP_VERSION = 53;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -1213,27 +1213,30 @@ Return ONLY a JSON array: [{"name":"...","cal":...,"protein":...,"carbs":...,"fa
 
     if(items.length) {
       this._lastAIResults = items;
-      html += '<div class="search-results">';
-      html += '<div style="font-size:12px;color:#64748b;padding:6px 10px;text-transform:uppercase;letter-spacing:1px;font-weight:700">AI Estimate</div>';
-      html += items.map((item, i) =>
-        `<div class="search-item" onclick="F.addAIResult(${i})">
-          <div class="search-item-info">
-            <div class="search-item-name">${item.name}</div>
-            <div class="search-item-meta">${item.serving || ''} · P:${Math.round(item.protein||0)}g C:${Math.round(item.carbs||0)}g F:${Math.round(item.fat||0)}g</div>
-          </div>
-          <div class="search-item-cal">${Math.round(item.cal)} cal</div>
+      const totalCal = items.reduce((a,f) => a + Math.round(f.cal), 0);
+      const totalP = items.reduce((a,f) => a + Math.round(f.protein||0), 0);
+      const totalC = items.reduce((a,f) => a + Math.round(f.carbs||0), 0);
+      const totalF = items.reduce((a,f) => a + Math.round(f.fat||0), 0);
+      const mealName = items.length === 1 ? items[0].name : items.map(i => i.name).join(', ');
+
+      html += '<div style="background:#1e293b;border-radius:10px;padding:14px;margin-top:10px">';
+      html += '<div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px">AI Estimate</div>';
+      html += `<div style="text-align:center;margin-bottom:12px">
+        <div style="font-size:32px;font-weight:800;color:#3b82f6">${totalCal} cal</div>
+        <div style="font-size:13px;color:#94a3b8;margin-top:4px">P: ${totalP}g · C: ${totalC}g · F: ${totalF}g</div>
+      </div>`;
+      html += '<div style="border-top:1px solid #334155;padding-top:10px;margin-bottom:12px">';
+      html += items.map(item =>
+        `<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px">
+          <span style="color:#cbd5e1">${item.name} <span style="color:#64748b">${item.serving||''}</span></span>
+          <span style="color:#94a3b8;white-space:nowrap;margin-left:8px">${Math.round(item.cal)} cal</span>
         </div>`
       ).join('');
-      if(items.length > 1) {
-        const totalCal = items.reduce((a,f) => a + Math.round(f.cal), 0);
-        html += `<div class="search-item" onclick="F.addAllAIResults()" style="border-top:1px solid #334155">
-          <div class="search-item-info">
-            <div class="search-item-name" style="color:#3b82f6">Add all ${items.length} items</div>
-          </div>
-          <div class="search-item-cal" style="color:#3b82f6">${totalCal} cal</div>
-        </div>`;
-      }
       html += '</div>';
+      html += `<button class="btn btn-primary btn-block" onclick="F.confirmAIMeal()">Add Meal</button>`;
+      html += '</div>';
+
+      this._pendingMeal = {name: mealName.length > 50 ? mealName.slice(0,47)+'...' : mealName, cal: totalCal, protein: totalP, carbs: totalC, fat: totalF};
     } else if(!hasLocal) {
       html = '<div class="muted small" style="padding:8px">No results. Try a different description or add manually.</div>';
     }
@@ -1241,18 +1244,13 @@ Return ONLY a JSON array: [{"name":"...","cal":...,"protein":...,"carbs":...,"fa
   },
 
   _lastAIResults: [],
+  _pendingMeal: null,
 
-  addAIResult(idx) {
-    const item = this._lastAIResults[idx];
-    if(!item) return;
-    this.addFood(item.name, Math.round(item.cal), Math.round(item.protein||0), Math.round(item.carbs||0), Math.round(item.fat||0));
-    this.clearSearch();
-  },
-
-  addAllAIResults() {
-    for(const item of this._lastAIResults) {
-      this.addFood(item.name, Math.round(item.cal), Math.round(item.protein||0), Math.round(item.carbs||0), Math.round(item.fat||0));
-    }
+  confirmAIMeal() {
+    const m = this._pendingMeal;
+    if(!m) return;
+    this.addFood(m.name, m.cal, m.protein, m.carbs, m.fat);
+    this._pendingMeal = null;
     this.clearSearch();
   },
 
