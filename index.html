@@ -6,7 +6,7 @@
   <title>FitTrack</title>
   <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#0f172a">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://world.openfoodfacts.org; connect-src 'self' https://world.openfoodfacts.org; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; media-src 'self' blob:; worker-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://unpkg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://world.openfoodfacts.org; connect-src 'self' https://world.openfoodfacts.org https://generativelanguage.googleapis.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; media-src 'self' blob:; worker-src 'self' blob:">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -255,7 +255,7 @@ textarea{resize:vertical;min-height:80px}
   <div class="card">
     <h3>Search</h3>
     <div class="food-search-wrap">
-      <input id="food-search" placeholder="Search your foods or online database" autocomplete="off" autocorrect="off">
+      <input id="food-search" placeholder="Describe what you ate..." autocomplete="off" autocorrect="off">
       <button class="food-search-clear hidden" id="food-search-clear" onclick="F.clearSearch()">&times;</button>
     </div>
     <div id="search-results"></div>
@@ -518,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 49;
+const APP_VERSION = 50;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -1059,7 +1059,6 @@ const T = {
    ══════════════════════════════════════════ */
 const F = {
   searchTimeout: null,
-  _lastResults: [],
   _html5QrScanner: null,
   _searchCache: {},
 
@@ -1076,7 +1075,7 @@ const F = {
     } else {
       logList.innerHTML = entry.foods.map((f,i) =>
         `<div class="food-item">
-          <div><span class="small">${f.time||''}</span> ${f.name} <span class="muted">${f.cal} cal</span></div>
+          <div><span class="small">${f.time||''}</span> ${f.name} <span class="muted">${f.cal} cal</span>${f.protein ? `<div class="muted" style="font-size:11px;margin-top:2px">P:${f.protein}g · C:${f.carbs||0}g · F:${f.fat||0}g</div>` : ''}</div>
           <button class="btn-icon" onclick="F.removeFood(${i})">&times;</button>
         </div>`
       ).join('');
@@ -1120,10 +1119,10 @@ const F = {
     let html = '<div class="search-results">';
     html += '<div style="font-size:12px;color:#64748b;padding:6px 10px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Your Foods</div>';
     html += matches.map((r, i) =>
-      `<div class="search-item" onclick="F.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal})">
+      `<div class="search-item" onclick="F.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal},${r.protein||0},${r.carbs||0},${r.fat||0})">
         <div class="search-item-info">
           <div class="search-item-name">${r.name}</div>
-          <div class="search-item-meta">Logged ${r.count} time${r.count>1?'s':''}</div>
+          <div class="search-item-meta">Logged ${r.count} time${r.count>1?'s':''}${r.protein ? ' · P:'+r.protein+'g C:'+r.carbs+'g F:'+r.fat+'g' : ''}</div>
         </div>
         <div class="search-item-cal">${r.cal} cal</div>
       </div>`
@@ -1137,152 +1136,119 @@ const F = {
     const el = document.getElementById('search-results');
     const statusEl = document.getElementById('api-search-status');
 
-    // Check cache first
     const cacheKey = query.toLowerCase().trim();
     if(this._searchCache[cacheKey]) {
-      this.renderAPIResults(this._searchCache[cacheKey], el);
+      this.renderAIResults(this._searchCache[cacheKey], el);
+      return;
+    }
+
+    const apiKey = S.get('geminiKey', '');
+    if(!apiKey) {
+      const s = statusEl || el;
+      s.innerHTML = (el.innerHTML.includes('Your Foods') ? el.innerHTML.replace(/<div class="search-loading"[^>]*>.*?<\/div>$/s, '') : '') +
+        '<div style="padding:10px;font-size:13px;color:#f59e0b;background:#1e293b;border-radius:8px;margin-top:8px">' +
+        'AI food search needs a Gemini API key. <a href="#" onclick="F.showKeySetup();return false" style="color:#3b82f6;text-decoration:underline">Set up now</a> (free)</div>';
       return;
     }
 
     if(!statusEl) {
-      // No local results were shown, show loading
       if(!el.innerHTML.includes('Your Foods')) {
-        el.innerHTML = '<div class="search-loading">Searching...</div>';
+        el.innerHTML = '<div class="search-loading">Estimating nutrition...</div>';
       }
+    } else {
+      statusEl.textContent = 'Estimating nutrition...';
     }
 
     try {
-      const url = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=true&page_size=5&fields=product_name,nutriments,brands,quantity`;
-      const resp = await fetch(url);
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          contents: [{parts: [{text: `Estimate the nutritional content of: "${query}"
+
+Break into individual food items. For each item return: name (short, readable), cal (total kcal for the serving), protein (grams), carbs (grams), fat (grams), serving (brief description like "1 plate", "250ml", "2 large").
+
+Use typical serving sizes unless the user specified amounts. Be realistic.
+
+Return ONLY a JSON array: [{"name":"...","cal":...,"protein":...,"carbs":...,"fat":...,"serving":"..."}]`}]}],
+          generationConfig: {temperature: 0.2, maxOutputTokens: 1024}
+        })
+      });
       const data = await resp.json();
-      const products = (data.products || []).filter(p => p.product_name && p.nutriments);
-
-      // Cache the results
-      this._searchCache[cacheKey] = products;
-
-      this.renderAPIResults(products, el);
+      const text = (data.candidates?.[0]?.content?.parts?.[0]?.text || '').trim();
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if(!jsonMatch) throw new Error('No results');
+      const items = JSON.parse(jsonMatch[0]);
+      this._searchCache[cacheKey] = items;
+      this.renderAIResults(items, el);
     } catch(e) {
       const s = document.getElementById('api-search-status');
-      if(s) s.textContent = 'Online search failed.';
+      if(s) s.textContent = 'Estimation failed. Try again or add manually.';
       else if(!el.innerHTML.includes('Your Foods')) {
-        el.innerHTML = '<div class="muted small" style="padding:8px">Search failed. Check your connection.</div>';
+        el.innerHTML = '<div class="muted small" style="padding:8px">Estimation failed. Check connection or add manually.</div>';
       }
     }
   },
 
-  renderAPIResults(products, el) {
-    // Keep local results if they exist
+  renderAIResults(items, el) {
     const existing = el.innerHTML;
     const hasLocal = existing.includes('Your Foods');
-
     let html = hasLocal ? existing.replace(/<div class="search-loading"[^>]*>.*?<\/div>$/s, '') : '';
 
-    if(products.length) {
+    if(items.length) {
+      this._lastAIResults = items;
       html += '<div class="search-results">';
-      html += '<div style="font-size:12px;color:#64748b;padding:6px 10px;text-transform:uppercase;letter-spacing:1px;font-weight:700">Online Results</div>';
-      html += products.map((p, i) => {
-        const cal = Math.round(p.nutriments['energy-kcal_100g'] || p.nutriments['energy-kcal'] || 0);
-        const name = p.product_name;
-        const brand = p.brands || '';
-        const qty = p.quantity || '';
-        const per100 = p.nutriments['energy-kcal_100g'] ? ' /100g' : '';
-        return `<div class="search-item" onclick="F.addSearchResult(${i})">
+      html += '<div style="font-size:12px;color:#64748b;padding:6px 10px;text-transform:uppercase;letter-spacing:1px;font-weight:700">AI Estimate</div>';
+      html += items.map((item, i) =>
+        `<div class="search-item" onclick="F.addAIResult(${i})">
           <div class="search-item-info">
-            <div class="search-item-name">${name}</div>
-            <div class="search-item-meta">${brand}${qty ? ' · '+qty : ''}</div>
+            <div class="search-item-name">${item.name}</div>
+            <div class="search-item-meta">${item.serving || ''} · P:${Math.round(item.protein||0)}g C:${Math.round(item.carbs||0)}g F:${Math.round(item.fat||0)}g</div>
           </div>
-          <div class="search-item-cal">${cal} cal${per100}</div>
+          <div class="search-item-cal">${Math.round(item.cal)} cal</div>
+        </div>`
+      ).join('');
+      if(items.length > 1) {
+        const totalCal = items.reduce((a,f) => a + Math.round(f.cal), 0);
+        html += `<div class="search-item" onclick="F.addAllAIResults()" style="border-top:1px solid #334155">
+          <div class="search-item-info">
+            <div class="search-item-name" style="color:#3b82f6">Add all ${items.length} items</div>
+          </div>
+          <div class="search-item-cal" style="color:#3b82f6">${totalCal} cal</div>
         </div>`;
-      }).join('');
+      }
       html += '</div>';
-      this._lastResults = products;
     } else if(!hasLocal) {
-      html = '<div class="muted small" style="padding:8px">No results found. Try a different search or add manually.</div>';
-    } else {
-      // Remove loading indicator, local results are enough
+      html = '<div class="muted small" style="padding:8px">No results. Try a different description or add manually.</div>';
     }
-
     el.innerHTML = html;
   },
 
-  addSearchResult(idx) {
-    const p = this._lastResults[idx];
-    if(!p) return;
-    const calPer100 = Math.round(p.nutriments['energy-kcal_100g'] || 0);
-    const calTotal = Math.round(p.nutriments['energy-kcal'] || 0);
-    const name = p.product_name + (p.brands ? ` (${p.brands})` : '');
-    const qty = p.quantity || '';
+  _lastAIResults: [],
 
-    let defaultServing = 100;
-    const qtyMatch = qty.match(/(\d+)\s*(ml|g|cl|l)\b/i);
-    if(qtyMatch) {
-      let val = parseFloat(qtyMatch[1]);
-      const unit = qtyMatch[2].toLowerCase();
-      if(unit === 'l') val *= 1000;
-      if(unit === 'cl') val *= 10;
-      defaultServing = val;
-    }
-
-    if(calPer100 > 0) {
-      this._pendingFood = {name, calPer100, qty};
-      const estCal = Math.round(calPer100 * defaultServing / 100);
-      showModal(`
-        <h3>How much?</h3>
-        <div style="font-size:16px;margin-bottom:4px"><b>${p.product_name}</b></div>
-        <div class="muted small" style="margin-bottom:14px">${p.brands||''} ${qty ? '· '+qty : ''} · ${calPer100} cal/100g</div>
-        <div class="measure-input">
-          <label style="width:100px">Portion (g/ml)</label>
-          <button class="adj-btn" onclick="F.adjPortion(-50)">&minus;</button>
-          <input id="portion-input" inputmode="numeric" value="${defaultServing}" style="width:90px" oninput="F.updatePortionCal()">
-          <button class="adj-btn" onclick="F.adjPortion(50)">+</button>
-        </div>
-        <div style="text-align:center;margin:14px 0">
-          <div style="font-size:13px;color:#64748b">Estimated calories</div>
-          <div id="portion-cal-display" style="font-size:36px;font-weight:800;color:#3b82f6">${estCal}</div>
-        </div>
-        <div class="row" style="gap:8px;margin-bottom:8px">
-          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(50)">50g</button>
-          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(100)">100g</button>
-          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(150)">150g</button>
-          <button class="btn btn-secondary btn-sm" style="flex:1" onclick="F.setPortionQuick(250)">250g</button>
-        </div>
-        <button class="btn btn-primary btn-block" onclick="F.confirmPortion()">Add</button>
-      `);
-    } else if(calTotal > 0) {
-      this.addFood(name, calTotal);
-      this.clearSearch();
-    }
-  },
-
-  _pendingFood: null,
-
-  adjPortion(delta) {
-    const inp = document.getElementById('portion-input');
-    const val = Math.max(10, (parseInt(inp.value) || 100) + delta);
-    inp.value = val;
-    this.updatePortionCal();
-  },
-
-  setPortionQuick(g) {
-    document.getElementById('portion-input').value = g;
-    this.updatePortionCal();
-  },
-
-  updatePortionCal() {
-    if(!this._pendingFood) return;
-    const portion = parseInt(document.getElementById('portion-input').value) || 100;
-    const cal = Math.round(this._pendingFood.calPer100 * portion / 100);
-    document.getElementById('portion-cal-display').textContent = cal;
-  },
-
-  confirmPortion() {
-    if(!this._pendingFood) return;
-    const portion = parseInt(document.getElementById('portion-input').value) || 100;
-    const cal = Math.round(this._pendingFood.calPer100 * portion / 100);
-    this.addFood(this._pendingFood.name, cal);
-    this._pendingFood = null;
-    closeModalForce();
+  addAIResult(idx) {
+    const item = this._lastAIResults[idx];
+    if(!item) return;
+    this.addFood(item.name, Math.round(item.cal), Math.round(item.protein||0), Math.round(item.carbs||0), Math.round(item.fat||0));
     this.clearSearch();
+  },
+
+  addAllAIResults() {
+    for(const item of this._lastAIResults) {
+      this.addFood(item.name, Math.round(item.cal), Math.round(item.protein||0), Math.round(item.carbs||0), Math.round(item.fat||0));
+    }
+    this.clearSearch();
+  },
+
+  showKeySetup() {
+    const current = S.get('geminiKey', '');
+    showModal(`
+      <h3>AI Food Search Setup</h3>
+      <p style="font-size:14px;line-height:1.5;margin-bottom:12px">Enter your free Gemini API key. Get one at <b>aistudio.google.com/apikey</b></p>
+      <input id="gemini-key-input" type="password" placeholder="Paste API key here" value="${current}" style="font-size:16px;width:100%;box-sizing:border-box">
+      <div class="spacer"></div>
+      <button class="btn btn-primary btn-block" onclick="S.set('geminiKey',document.getElementById('gemini-key-input').value.trim());closeModalForce()">Save</button>
+    `);
   },
 
   // ── Barcode scanner (html5-qrcode for cross-browser support) ──
@@ -1354,9 +1320,15 @@ const F = {
         const p = data.product;
         this.stopScanner();
         closeModalForce();
-        // Use the same portion flow as search results
-        this._lastResults = [p];
-        this.addSearchResult(0);
+        const n = p.nutriments || {};
+        const name = p.product_name + (p.brands ? ` (${p.brands})` : '');
+        const cal = Math.round(n['energy-kcal'] || n['energy-kcal_100g'] || 0);
+        const protein = Math.round(n['proteins_100g'] || 0);
+        const carbs = Math.round(n['carbohydrates_100g'] || 0);
+        const fat = Math.round(n['fat_100g'] || 0);
+        if(cal > 0) {
+          this.addFood(name, cal, protein, carbs, fat);
+        }
       } else {
         if(statusEl) statusEl.textContent = 'Product not found in database. Try searching by name instead.';
       }
@@ -1369,15 +1341,22 @@ const F = {
   getRecents() {
     return S.get('foodRecents', []);
   },
-  trackRecent(name, cal) {
+  trackRecent(name, cal, protein, carbs, fat) {
     const recents = this.getRecents();
     const existing = recents.find(r => r.name === name);
     if(existing) {
       existing.count++;
       existing.cal = cal;
+      if(protein) existing.protein = protein;
+      if(carbs) existing.carbs = carbs;
+      if(fat) existing.fat = fat;
       existing.lastUsed = Date.now();
     } else {
-      recents.push({name, cal, count:1, lastUsed: Date.now()});
+      const r = {name, cal, count:1, lastUsed: Date.now()};
+      if(protein) r.protein = protein;
+      if(carbs) r.carbs = carbs;
+      if(fat) r.fat = fat;
+      recents.push(r);
     }
     recents.sort((a,b) => b.count - a.count || b.lastUsed - a.lastUsed);
     S.set('foodRecents', recents.slice(0, 40));
@@ -1390,7 +1369,7 @@ const F = {
       return;
     }
     el.innerHTML = '<div class="recents-grid">' + recents.map(r =>
-      `<button class="recent-chip" onclick="F.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal})">
+      `<button class="recent-chip" onclick="F.addFood('${r.name.replace(/'/g,"\\'")}',${r.cal},${r.protein||0},${r.carbs||0},${r.fat||0})">
         <span class="rc-name">${r.name.length > 22 ? r.name.slice(0,20)+'...' : r.name}</span>
         <span class="rc-cal">${r.cal} cal</span>
       </button>`
@@ -1398,12 +1377,16 @@ const F = {
   },
 
   // ── Core food methods ──
-  addFood(name, cal) {
+  addFood(name, cal, protein, carbs, fat) {
     const entry = T.getDaily(T.viewDate);
     const now = new Date();
-    entry.foods.push({name, cal, time: now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')});
+    const food = {name, cal, time: now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')};
+    if(protein) food.protein = protein;
+    if(carbs) food.carbs = carbs;
+    if(fat) food.fat = fat;
+    entry.foods.push(food);
     T.saveDaily(entry);
-    this.trackRecent(name, cal);
+    this.trackRecent(name, cal, protein, carbs, fat);
     this.render();
     T.render();
     Coach.refreshIfVisible();
