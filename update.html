@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FitTrack Update</title>
+<style>body{font-family:-apple-system,system-ui,sans-serif;background:#0f172a;color:#e2e8f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;text-align:center}
+.box{padding:24px;max-width:360px}.spinner{font-size:32px;animation:spin 1s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}</style>
+</head><body>
+<div class="box">
+<div class="spinner">&#9881;</div>
+<h2>Updating FitTrack...</h2>
+<p id="status">Clearing old service worker...</p>
+</div>
+<script>
+(async () => {
+  const s = document.getElementById('status');
+  try {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for(const r of regs) await r.unregister();
+    s.textContent = 'Clearing old caches...';
+    const keys = await caches.keys();
+    for(const k of keys) await caches.delete(k);
+    s.textContent = 'Done! Redirecting...';
+    setTimeout(() => window.location.replace('./index.html'), 1000);
+  } catch(e) {
+    s.textContent = 'Error: ' + e.message + '. Try refreshing.';
+  }
+})();
+</script>
+</body></html>
