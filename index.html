@@ -521,7 +521,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 46;
+const APP_VERSION = 47;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2399,8 +2399,12 @@ const I = {
       T.render();
       Coach.refreshIfVisible();
       this.renderMissingDays();
-      const msg = count > 1 ? `${count} days imported successfully.` : 'Health data imported successfully.';
+      const postHealth = S.get('healthImport', {});
+      const storedDates = (postHealth.steps||[]).map(r=>r.date).sort();
+      const importedDates = items.filter(d=>d.date).map(d=>d.date).sort();
+      const msg = count > 1 ? `${count} days imported.` : 'Health data imported.';
       showModal(`<h3>Synced!</h3><p style="font-size:15px">${msg}</p>
+        <div style="font-size:11px;color:#94a3b8;margin-top:8px;text-align:left"><b>Imported dates:</b> ${importedDates.join(', ') || 'none'}<br><b>Stored step dates:</b> ${storedDates.join(', ')}</div>
         <div class="spacer"></div><button class="btn btn-primary btn-block" onclick="closeModalForce()">OK</button>`);
     } catch(e) {
       errEl.textContent = 'Invalid data format. Expected JSON from the Health Shortcut. Error: ' + e.message;

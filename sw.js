@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fittrack-v46';
+const CACHE_NAME = 'fittrack-v47';
 const ASSETS = [
   './index.html',
   './manifest.webmanifest',
