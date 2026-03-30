@@ -518,7 +518,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 44;
+const APP_VERSION = 45;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2371,6 +2371,8 @@ const I = {
         fixed = fixed.replace(/:\s*,/g, ':null,');       // empty values like "key":,
         fixed = fixed.replace(/:\s*}/g, ':null}');        // empty values at end like "key":}
         fixed = fixed.replace(/,\s*([}\]])/g, '$1');      // trailing commas
+        // Newline-separated objects → comma-separated
+        fixed = fixed.replace(/}\s*\n\s*\{/g, '},{');
         if(/^\s*\{/.test(fixed) && !/^\s*\[/.test(fixed)) {
           fixed = '[' + fixed + ']';                       // wrap bare {},{} in array
         }
