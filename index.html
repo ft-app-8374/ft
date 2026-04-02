@@ -330,9 +330,13 @@ textarea{resize:vertical;min-height:80px}
     </div>
   </div>
 
-  <!-- Manual Exercise Select -->
+  <!-- Exercise Search + Manual Select -->
   <div class="card" id="manual-exercise-card">
-    <h3>Or Pick an Exercise</h3>
+    <h3>Add Exercise</h3>
+    <div class="food-search-wrap" style="margin-bottom:12px">
+      <input id="exercise-search" placeholder="Search or describe an exercise..." autocomplete="off" autocorrect="off" style="font-size:16px">
+    </div>
+    <div id="exercise-search-results"></div>
     <div id="exercise-pills"></div>
   </div>
 
@@ -518,7 +522,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 53;
+const APP_VERSION = 54;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -749,8 +753,22 @@ const DEFAULT_EXERCISES = [
 ];
 
 function initExercises() {
-  if(!S.get('exercises')) {
+  const existing = S.get('exercises', null);
+  if(!existing) {
     S.set('exercises', DEFAULT_EXERCISES.map(e => ({...e, lastWeight:0, lastReps:0, pr:null})));
+  } else {
+    // Merge missing fields (video, tips, muscles) from defaults into existing data
+    let updated = false;
+    const defaultMap = new Map(DEFAULT_EXERCISES.map(e => [e.name, e]));
+    for(const ex of existing) {
+      const def = defaultMap.get(ex.name);
+      if(def) {
+        if(!ex.video && def.video) { ex.video = def.video; updated = true; }
+        if(!ex.tips && def.tips) { ex.tips = def.tips; updated = true; }
+        if(!ex.muscles && def.muscles) { ex.muscles = def.muscles; updated = true; }
+      }
+    }
+    if(updated) S.set('exercises', existing);
   }
 }
 
@@ -1505,6 +1523,128 @@ const W = {
 
     this.renderTodaySummary();
     this.renderHistory();
+  },
+
+  // ── Exercise Search ──
+  _exSearchTimeout: null,
+  _exSearchCache: {},
+
+  initExerciseSearch() {
+    const input = document.getElementById('exercise-search');
+    if(!input) return;
+    input.oninput = () => {
+      const q = input.value.trim();
+      clearTimeout(this._exSearchTimeout);
+      if(q.length < 2) { document.getElementById('exercise-search-results').innerHTML = ''; return; }
+      // Instant local match
+      this.showLocalExerciseResults(q);
+      // LLM fallback after delay
+      this._exSearchTimeout = setTimeout(() => this.doExerciseLLMSearch(q), 400);
+    };
+  },
+
+  showLocalExerciseResults(query) {
+    const el = document.getElementById('exercise-search-results');
+    const q = query.toLowerCase();
+    const exercises = S.get('exercises', []);
+    const matches = exercises.filter(e => e.name.toLowerCase().includes(q)).slice(0, 5);
+    if(!matches.length) {
+      el.innerHTML = '<div class="search-loading">Searching...</div>';
+      return;
+    }
+    el.innerHTML = '<div class="search-results">' + matches.map(e =>
+      `<div class="search-item" onclick="W.selectExercise('${e.name.replace(/'/g,"\\'")}');document.getElementById('exercise-search').value='';document.getElementById('exercise-search-results').innerHTML=''">
+        <div class="search-item-info">
+          <div class="search-item-name">${e.name}</div>
+          <div class="search-item-meta">${e.cat ? e.cat.charAt(0).toUpperCase()+e.cat.slice(1) : ''}${e.muscles ? ' · '+e.muscles.join(', ') : ''}</div>
+        </div>
+      </div>`
+    ).join('') + '</div><div class="search-loading" id="ex-api-status">Searching for more...</div>';
+  },
+
+  async doExerciseLLMSearch(query) {
+    const el = document.getElementById('exercise-search-results');
+    const statusEl = document.getElementById('ex-api-status');
+    const cacheKey = query.toLowerCase().trim();
+    if(this._exSearchCache[cacheKey]) {
+      this.renderExerciseLLMResults(this._exSearchCache[cacheKey], el);
+      return;
+    }
+
+    const groqKey = S.get('groqKey', '');
+    if(!groqKey) {
+      if(statusEl) statusEl.textContent = 'Set up AI key in Food tab for exercise search.';
+      return;
+    }
+
+    try {
+      const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + groqKey},
+        body: JSON.stringify({model: 'llama-3.3-70b-versatile', messages: [{role: 'user', content: `The user wants to do this exercise: "${query}"
+
+Identify the exercise(s) they mean. For each, return: name (standard gym name), cat (one of: push, pull, legs, core), muscles (array of target muscles), tips (array of 2-3 form cues).
+
+Return ONLY a JSON array: [{"name":"...","cat":"...","muscles":["..."],"tips":["..."]}]`}], temperature: 0.2, max_tokens: 512})
+      });
+      const data = await resp.json();
+      if(data.error) throw new Error(data.error.message);
+      const text = (data.choices?.[0]?.message?.content || '').trim();
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if(!jsonMatch) throw new Error('No results');
+      const items = JSON.parse(jsonMatch[0]);
+      this._exSearchCache[cacheKey] = items;
+      this.renderExerciseLLMResults(items, el);
+    } catch(e) {
+      if(statusEl) statusEl.textContent = 'Could not find exercise.';
+    }
+  },
+
+  renderExerciseLLMResults(items, el) {
+    const existing = el.innerHTML;
+    const hasLocal = existing.includes('search-item');
+    let html = hasLocal ? existing.replace(/<div class="search-loading"[^>]*>.*?<\/div>$/s, '') : '';
+
+    if(items.length) {
+      html += '<div class="search-results">';
+      html += '<div style="font-size:12px;color:#64748b;padding:6px 10px;text-transform:uppercase;letter-spacing:1px;font-weight:700">AI Suggestions</div>';
+      html += items.map((item, i) =>
+        `<div class="search-item" onclick="W.addLLMExercise(${i})">
+          <div class="search-item-info">
+            <div class="search-item-name">${item.name}</div>
+            <div class="search-item-meta">${item.cat ? item.cat.charAt(0).toUpperCase()+item.cat.slice(1) : ''}${item.muscles ? ' · '+item.muscles.join(', ') : ''}</div>
+          </div>
+        </div>`
+      ).join('');
+      html += '</div>';
+      this._lastExLLMResults = items;
+    }
+    el.innerHTML = html;
+  },
+
+  _lastExLLMResults: [],
+
+  addLLMExercise(idx) {
+    const item = this._lastExLLMResults[idx];
+    if(!item) return;
+    // Add to exercise database if not already there
+    const exercises = S.get('exercises', []);
+    if(!exercises.find(e => e.name.toLowerCase() === item.name.toLowerCase())) {
+      exercises.push({
+        name: item.name,
+        cat: item.cat || 'core',
+        muscles: item.muscles || [],
+        tips: item.tips || [],
+        video: null,
+        lastWeight: 0,
+        lastReps: 0,
+        pr: null
+      });
+      S.set('exercises', exercises);
+    }
+    document.getElementById('exercise-search').value = '';
+    document.getElementById('exercise-search-results').innerHTML = '';
+    this.selectExercise(item.name);
   },
 
   // ── Workout Generation ──
@@ -3449,6 +3589,7 @@ async function initApp() {
     Coach.render();
   }
   F.initSearch();
+  W.initExerciseSearch();
   document.querySelectorAll('#app-ver, #app-ver-badge').forEach(el => el.textContent = APP_VERSION);
 
   // Show backup status on sync tab
