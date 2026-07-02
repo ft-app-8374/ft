@@ -186,22 +186,25 @@ textarea{resize:vertical;min-height:80px}
 .health-metric .hm-value{font-size:24px;font-weight:800;margin-bottom:2px}
 .health-metric .hm-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px}
 /* ── Weekly dials (homepage hero) ── */
-.dial-row{display:flex;gap:10px;justify-content:space-between}
-.dial{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center}
-.dial svg{width:96px;height:96px;display:block}
-.dial .dial-center{font-size:20px;font-weight:800;line-height:1.05}
-.dial .dial-unit{font-size:10px;font-weight:600;fill:#64748b}
-.dial .dial-label{font-size:12px;color:#94a3b8;margin-top:6px;font-weight:600}
-.dial .dial-trend{font-size:12px;font-weight:700;margin-top:2px}
-.dial .up{color:#10b981}.dial .down{color:#ef4444}.dial .flat{color:#64748b}
-.wk-compare{margin-top:14px}
-.wk-line{display:flex;align-items:center;justify-content:space-between;font-size:14px;padding:7px 0;border-top:1px solid #1e293b}
-.wk-line .wk-name{color:#cbd5e1;font-weight:600}
-.wk-line .wk-vals{color:#94a3b8}
-.wk-plan{background:#0f172a;border-left:3px solid #10b981;border-radius:0 12px 12px 0;padding:12px 14px;margin-top:12px;font-size:14px;line-height:1.6}
-.wk-plan b{color:#e2e8f0}
-.wk-plan .wk-plan-title{color:#10b981;font-weight:700;margin-bottom:6px}
-.wk-meta{font-size:13px;color:#64748b;margin-top:4px}
+#weekly-hero{padding:20px 16px 22px}
+#weekly-hero h3{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;font-weight:800}
+.dial-row{display:flex;gap:6px;justify-content:space-between;margin-top:16px}
+.dial{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;text-align:center}
+.dial svg{width:100%;max-width:124px;height:auto;aspect-ratio:1/1;display:block}
+.dial .dial-center{font-weight:800;line-height:1}
+.dial .dial-unit{font-weight:700;fill:#64748b}
+.dial .dial-label{font-size:12px;color:#cbd5e1;margin-top:9px;font-weight:700;letter-spacing:.3px}
+.dial .dial-trend{display:inline-block;font-size:11px;font-weight:800;margin-top:6px;padding:3px 10px;border-radius:999px;line-height:1.4;white-space:nowrap}
+.dial .up{color:#34d399;background:rgba(16,185,129,.15)}
+.dial .down{color:#f87171;background:rgba(239,68,68,.15)}
+.dial .flat{color:#94a3b8;background:rgba(148,163,184,.13)}
+.wk-focus{margin-top:22px;padding:18px;background:linear-gradient(150deg,#132135,#0f172a);border:1px solid #24344b;border-radius:18px}
+.wk-focus .wk-focus-eyebrow{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#60a5fa;font-weight:800;margin-bottom:10px}
+.wk-focus .wk-focus-head{font-size:21px;font-weight:800;line-height:1.25;color:#f8fafc;letter-spacing:-.2px}
+.wk-focus .wk-focus-sub{font-size:16px;line-height:1.55;color:#cbd5e1;margin-top:10px}
+.wk-focus .wk-focus-sub b{color:#fff;font-weight:800}
+.wk-meta{font-size:13px;color:#64748b;margin-top:14px;text-align:center;font-weight:600}
+.wk-meta b{color:#94a3b8}
 .health-metric .hm-unit{font-size:13px;color:#64748b;font-weight:400}
 .health-metric.wide{grid-column:span 2}
 
@@ -550,7 +553,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 55;
+const APP_VERSION = 56;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -892,15 +895,23 @@ const T = {
 
   // Aggregate a health metric over [start, endExclusive). mode 'sum' adds same-day
   // records; 'max' takes the day's largest (steps can be double-imported).
-  weeklyMetric(health, field, start, endExclusive, mode) {
-    const arr = (health && health[field]) || [];
+  // One or more health fields aggregated per day, then combined (e.g. active +
+  // resting energy = actual calories burnt). mode 'sum' adds same-day samples,
+  // 'max' takes the day's largest (steps can be double-imported).
+  weeklyMetric(health, fields, start, endExclusive, mode) {
+    if(typeof fields === 'string') fields = [fields];
     const byDate = {};
-    arr.forEach(r => {
-      if(r.date >= start && r.date < endExclusive) {
-        byDate[r.date] = mode === 'max'
-          ? Math.max(byDate[r.date] || 0, r.value)
-          : (byDate[r.date] || 0) + r.value;
-      }
+    fields.forEach(field => {
+      const arr = (health && health[field]) || [];
+      const perDate = {};
+      arr.forEach(r => {
+        if(r.date >= start && r.date < endExclusive) {
+          perDate[r.date] = mode === 'max'
+            ? Math.max(perDate[r.date] || 0, r.value)
+            : (perDate[r.date] || 0) + r.value;
+        }
+      });
+      Object.entries(perDate).forEach(([d,v]) => { byDate[d] = (byDate[d] || 0) + v; });
     });
     const vals = Object.values(byDate);
     const sum = vals.reduce((a,b) => a+b, 0);
@@ -926,117 +937,102 @@ const T = {
     }
 
     const METRICS = [
-      {key:'activeCal',    label:'Active Cal', unit:'kcal/d', color:'#f59e0b', goal:500,  mode:'sum', round:0},
-      {key:'exerciseMins', label:'Exercise',   unit:'min/d',  color:'#10b981', goal:30,   mode:'sum', round:0},
-      {key:'steps',        label:'Steps',      unit:'/d',     color:'#3b82f6', goal:8000, mode:'max', round:0},
+      {key:'burnt',        fields:['activeCal','restingEnergy'], label:'Calories Burnt', unit:'kcal/d', color:'#f59e0b', goal:2500, mode:'sum'},
+      {key:'exerciseMins', fields:['exerciseMins'],              label:'Exercise',       unit:'min/d',  color:'#10b981', goal:30,   mode:'sum'},
+      {key:'steps',        fields:['steps'],                     label:'Steps',          unit:'/d',     color:'#3b82f6', goal:8000, mode:'max'},
     ];
 
     METRICS.forEach(m => {
-      m.tw = this.weeklyMetric(health, m.key, tws, nextMon, m.mode);
-      m.lw = this.weeklyMetric(health, m.key, lws, tws,    m.mode);
+      m.tw = this.weeklyMetric(health, m.fields, tws, nextMon, m.mode);
+      m.lw = this.weeklyMetric(health, m.fields, lws, tws,    m.mode);
     });
 
     if(METRICS.every(m => m.tw.count === 0 && m.lw.count === 0)) {
-      el.innerHTML = '<div class="muted" style="text-align:center;padding:12px">No Active Energy / Exercise / Steps data yet for this week or last. Sync from Apple Health.</div>';
+      el.innerHTML = '<div class="muted" style="text-align:center;padding:12px">No Energy / Exercise / Steps data yet for this week or last. Sync from Apple Health.</div>';
       return;
     }
 
-    // ── Dials ──
+    // ── Dials (big, at-a-glance) ──
     const dial = (m) => {
-      const r = 40, C = 2*Math.PI*r;
+      const r = 52, C = 2*Math.PI*r;
       const frac = Math.max(0, Math.min(1, m.goal ? m.tw.avg/m.goal : 0));
       const off = C * (1 - frac);
       const avg = Math.round(m.tw.avg);
-      const big = avg >= 1000 ? (avg/1000).toFixed(avg>=10000?0:1)+'k' : avg.toLocaleString();
-      let trend = '<span class="flat">— no last wk</span>';
+      const big = avg >= 10000 ? Math.round(avg/1000)+'k' : avg.toLocaleString();
+      const fs = big.length >= 6 ? 20 : big.length >= 5 ? 23 : big.length === 4 ? 27 : 31;
+      let cls = 'flat', txt = 'no last wk';
       if(m.lw.avg > 0) {
         const pct = Math.round((m.tw.avg - m.lw.avg) / m.lw.avg * 100);
-        const cls = pct > 1 ? 'up' : pct < -1 ? 'down' : 'flat';
-        const arrow = pct > 1 ? '▲' : pct < -1 ? '▼' : '▬';
-        trend = `<span class="${cls}">${arrow} ${pct>0?'+':''}${pct}% vs last wk</span>`;
-      } else if(m.tw.avg > 0) {
-        trend = '<span class="up">▲ new this wk</span>';
-      }
+        cls = pct > 1 ? 'up' : pct < -1 ? 'down' : 'flat';
+        txt = `${pct>1?'▲':pct<-1?'▼':'▬'} ${pct>0?'+':''}${pct}%`;
+      } else if(m.tw.avg > 0) { cls = 'up'; txt = '▲ new'; }
       return `<div class="dial">
-        <svg viewBox="0 0 96 96">
-          <circle cx="48" cy="48" r="${r}" fill="none" stroke="#1e293b" stroke-width="8"/>
-          <circle cx="48" cy="48" r="${r}" fill="none" stroke="${m.color}" stroke-width="8"
-            stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}"
-            transform="rotate(-90 48 48)"/>
-          <text x="48" y="46" text-anchor="middle" class="dial-center" fill="#f1f5f9">${big}</text>
-          <text x="48" y="60" text-anchor="middle" class="dial-unit">${m.unit}</text>
+        <svg viewBox="0 0 128 128">
+          <circle cx="64" cy="64" r="${r}" fill="none" stroke="#1e293b" stroke-width="11"/>
+          <circle cx="64" cy="64" r="${r}" fill="none" stroke="${m.color}" stroke-width="11" stroke-linecap="round"
+            stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 64 64)"/>
+          <text x="64" y="62" text-anchor="middle" class="dial-center" fill="#f8fafc" font-size="${fs}">${big}</text>
+          <text x="64" y="84" text-anchor="middle" class="dial-unit" font-size="12">${m.unit}</text>
         </svg>
         <div class="dial-label">${m.label}</div>
-        <div class="dial-trend">${trend}</div>
+        <div class="dial-trend ${cls}">${txt}</div>
       </div>`;
     };
     let html = `<div class="dial-row">${METRICS.map(dial).join('')}</div>`;
 
-    // ── Week vs week comparison ──
-    html += '<div class="wk-compare">';
-    METRICS.forEach(m => {
-      const twA = Math.round(m.tw.avg).toLocaleString();
-      const lwA = m.lw.count ? Math.round(m.lw.avg).toLocaleString() : '—';
-      html += `<div class="wk-line"><span class="wk-name">${m.label}</span>
-        <span class="wk-vals">${twA} <span style="color:#475569">vs</span> ${lwA} <span style="color:#475569">avg/day</span></span></div>`;
-    });
-    html += '</div>';
+    // ── One clear focus: the single metric most worth attention this week ──
+    const proj = (m) => daysElapsed > 0 ? m.tw.sum / daysElapsed * 7 : 0;
+    const scored = METRICS.map(m => {
+      let sev = 0, kind = '';
+      if(m.lw.avg > 0 && m.tw.avg < m.lw.avg) { sev = (m.lw.avg - m.tw.avg) / m.lw.avg; kind = 'behind'; }
+      else if(m.goal && m.tw.count > 0 && m.tw.avg < m.goal) { sev = (m.goal - m.tw.avg) / m.goal * 0.7; kind = 'goal'; }
+      return {m, sev, kind};
+    }).sort((a,b) => b.sev - a.sev);
+    const f = scored[0];
+    const dLeft = daysRemaining;
+    const dtxt = dLeft > 0 ? `${dLeft} day${dLeft>1?'s':''}` : '';
 
-    // ── Insights + plan to close out the week ──
-    const plan = [];
-    const ex = METRICS.find(m => m.key === 'exerciseMins');
-    const cal = METRICS.find(m => m.key === 'activeCal');
-    const steps = METRICS.find(m => m.key === 'steps');
-
-    // Pace vs last week (projected full-week total from current daily pace)
-    const projection = (m) => daysElapsed > 0 ? m.tw.sum / daysElapsed * 7 : 0;
-
-    // Headline: are we ahead or behind overall?
-    const movers = METRICS.filter(m => m.lw.avg > 0);
-    if(movers.length) {
-      const up = movers.filter(m => m.tw.avg > m.lw.avg * 1.01).map(m => m.label);
-      const down = movers.filter(m => m.tw.avg < m.lw.avg * 0.99).map(m => m.label);
-      if(up.length) plan.push(`📈 Up on last week: <b>${up.join(', ')}</b>.`);
-      if(down.length) plan.push(`📉 Behind last week: <b>${down.join(', ')}</b>.`);
-    }
-
-    // Exercise-minutes plan (Dean's headline metric)
-    if(ex.lw.sum > 0) {
-      const deficit = Math.round(ex.lw.sum - ex.tw.sum);
-      if(deficit > 0 && daysRemaining > 0) {
-        plan.push(`💪 You're <b>${deficit} min</b> behind last week's exercise. ~<b>${Math.ceil(deficit/daysRemaining)} min/day</b> across the last ${daysRemaining} day${daysRemaining>1?'s':''} beats it — roughly ${Math.max(1,Math.ceil(deficit/30))} short session${Math.ceil(deficit/30)>1?'s':''}.`);
-      } else if(deficit <= 0) {
-        plan.push(`💪 Exercise minutes already past last week's total — keep it rolling.`);
+    let eyebrow, head, sub;
+    if(!f || f.sev < 0.02) {
+      eyebrow = 'On track';
+      head = dLeft > 0 ? 'Strong week — keep it rolling.' : 'Strong week — nicely done.';
+      sub = dLeft > 0 ? `You're up on last week across the board. Hold the pace for the final ${dtxt}.`
+                      : `You finished up on last week across the board. Great consistency.`;
+    } else if(f.m.key === 'exerciseMins') {
+      eyebrow = 'Focus · Exercise';
+      head = 'Exercise is the gap this week.';
+      if(f.kind === 'behind') {
+        const deficit = Math.max(1, Math.round(f.m.lw.sum - f.m.tw.sum));
+        sub = dLeft > 0 ? `You're <b>${deficit} min</b> behind last week — about <b>${Math.ceil(deficit/dLeft)} min a day</b> over the final ${dtxt} beats it.`
+                        : `Finished <b>${deficit} min</b> under last week. Line up a session for Monday.`;
       } else {
-        plan.push(`💪 ${deficit} min behind last week and the week's nearly done — log a session today if you can.`);
+        const short = Math.max(1, Math.round(f.m.goal - f.m.tw.avg));
+        sub = `Averaging <b>${Math.round(f.m.tw.avg)} min/day</b> — add <b>~${short} min a day</b> to reach your ${f.m.goal}-min target.`;
       }
-    } else if(ex.tw.avg < ex.goal && daysRemaining > 0) {
-      plan.push(`💪 Averaging <b>${Math.round(ex.tw.avg)} min/day</b> vs a ${ex.goal} min goal — add a short session to lift it.`);
-    }
-
-    // Steps plan
-    if(steps.tw.avg > 0 && steps.tw.avg < steps.goal) {
-      const short = Math.round(steps.goal - steps.tw.avg);
+    } else if(f.m.key === 'steps') {
+      eyebrow = 'Focus · Steps';
+      head = 'A daily walk closes the week.';
+      const short = Math.max(100, Math.round((f.kind === 'behind' ? f.m.lw.avg : f.m.goal) - f.m.tw.avg));
       const km = (short / 1300).toFixed(1);
-      plan.push(`👟 About <b>${short.toLocaleString()} steps/day</b> under ${steps.goal.toLocaleString()} — a ~${km} km walk closes the gap.`);
+      sub = `About <b>${short.toLocaleString()} steps/day</b> short — roughly a <b>${km} km</b> walk each day${dLeft>0?` for the final ${dtxt}`:''}.`;
+    } else {
+      eyebrow = 'Focus · Calories';
+      head = 'Calorie burn is trailing.';
+      if(dLeft > 0) {
+        const gap = Math.max(50, Math.round(f.m.lw.sum - proj(f.m)));
+        sub = `On pace to finish <b>~${gap.toLocaleString()} kcal</b> under last week — a couple of active days over the final ${dtxt} flips it.`;
+      } else {
+        const gap = Math.max(0, Math.round(f.m.lw.sum - f.m.tw.sum));
+        sub = `Finished <b>~${gap.toLocaleString()} kcal</b> under last week.`;
+      }
     }
 
-    // Calories pace
-    if(cal.lw.sum > 0) {
-      const proj = projection(cal);
-      if(proj >= cal.lw.sum) plan.push(`🔥 On pace to burn more active calories than last week.`);
-      else plan.push(`🔥 On current pace you'll finish ~<b>${Math.round(cal.lw.sum - proj).toLocaleString()} kcal</b> under last week — a couple of active days flips it.`);
-    }
-
-    const meta = daysRemaining > 0
-      ? `${daysElapsed} day${daysElapsed>1?'s':''} in · <b>${daysRemaining} day${daysRemaining>1?'s':''} left</b> to close out the week.`
-      : `Week complete — here's how it landed vs last week.`;
-
-    html += `<div class="wk-plan">
-      <div class="wk-plan-title">Insights &amp; plan</div>
-      ${plan.slice(0,4).map(p => `<div>${p}</div>`).join('')}
-      <div class="wk-meta">${meta}</div>
-    </div>`;
+    html += `<div class="wk-focus">
+      <div class="wk-focus-eyebrow">${eyebrow}</div>
+      <div class="wk-focus-head">${head}</div>
+      <div class="wk-focus-sub">${sub}</div>
+    </div>
+    <div class="wk-meta">${dLeft > 0 ? `Day ${daysElapsed} of 7 · <b>${dtxt} left</b> to close out the week` : 'Week complete'}</div>`;
 
     el.innerHTML = html;
   },
