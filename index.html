@@ -494,6 +494,7 @@ textarea{resize:vertical;min-height:80px}
   <div class="pill-row" id="chart-type-pills">
     <button class="pill active" data-chart="weight" onclick="C.switchChart('weight')">Weight</button>
     <button class="pill" data-chart="volume" onclick="C.switchChart('volume')">Workout</button>
+    <button class="pill" data-chart="active" onclick="C.switchChart('active')">Active kJ</button>
     <button class="pill" data-chart="calories" onclick="C.switchChart('calories')">Calories</button>
     <button class="pill" data-chart="steps" onclick="C.switchChart('steps')">Steps</button>
     <button class="pill" data-chart="heart" onclick="C.switchChart('heart')">Heart</button>
@@ -553,7 +554,9 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 56;
+const APP_VERSION = 57;
+// Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
+const KJ_TO_KCAL = 1 / 4.184;
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -898,17 +901,19 @@ const T = {
   // One or more health fields aggregated per day, then combined (e.g. active +
   // resting energy = actual calories burnt). mode 'sum' adds same-day samples,
   // 'max' takes the day's largest (steps can be double-imported).
-  weeklyMetric(health, fields, start, endExclusive, mode) {
+  weeklyMetric(health, fields, start, endExclusive, mode, factor) {
     if(typeof fields === 'string') fields = [fields];
+    factor = factor || 1;   // e.g. kJ→kcal uses KJ_TO_KCAL
     const byDate = {};
     fields.forEach(field => {
       const arr = (health && health[field]) || [];
       const perDate = {};
       arr.forEach(r => {
         if(r.date >= start && r.date < endExclusive) {
+          const v = r.value * factor;
           perDate[r.date] = mode === 'max'
-            ? Math.max(perDate[r.date] || 0, r.value)
-            : (perDate[r.date] || 0) + r.value;
+            ? Math.max(perDate[r.date] || 0, v)
+            : (perDate[r.date] || 0) + v;
         }
       });
       Object.entries(perDate).forEach(([d,v]) => { byDate[d] = (byDate[d] || 0) + v; });
@@ -937,14 +942,14 @@ const T = {
     }
 
     const METRICS = [
-      {key:'burnt',        fields:['activeCal','restingEnergy'], label:'Calories Burnt', unit:'kcal/d', color:'#f59e0b', goal:2500, mode:'sum'},
-      {key:'exerciseMins', fields:['exerciseMins'],              label:'Exercise',       unit:'min/d',  color:'#10b981', goal:30,   mode:'sum'},
-      {key:'steps',        fields:['steps'],                     label:'Steps',          unit:'/d',     color:'#3b82f6', goal:8000, mode:'max'},
+      {key:'burnt',        fields:['activeCal','restingEnergy'], label:'Calories Burnt', unit:'kcal/d', color:'#f59e0b', goal:2500, mode:'sum', factor:KJ_TO_KCAL},
+      {key:'exerciseMins', fields:['exerciseMins'], label:'Exercise',       unit:'min/d',  color:'#10b981', goal:30,   mode:'sum'},
+      {key:'steps',        fields:['steps'],        label:'Steps',          unit:'/d',     color:'#3b82f6', goal:8000, mode:'max'},
     ];
 
     METRICS.forEach(m => {
-      m.tw = this.weeklyMetric(health, m.fields, tws, nextMon, m.mode);
-      m.lw = this.weeklyMetric(health, m.fields, lws, tws,    m.mode);
+      m.tw = this.weeklyMetric(health, m.fields, tws, nextMon, m.mode, m.factor);
+      m.lw = this.weeklyMetric(health, m.fields, lws, tws,    m.mode, m.factor);
     });
 
     if(METRICS.every(m => m.tw.count === 0 && m.lw.count === 0)) {
@@ -3202,6 +3207,7 @@ const C = {
 
     if(this.chartType === 'weight') this.renderWeight(canvas);
     else if(this.chartType === 'volume') this.renderVolume(canvas);
+    else if(this.chartType === 'active') this.renderActive(canvas);
     else if(this.chartType === 'calories') this.renderCalories(canvas);
     else if(this.chartType === 'steps') this.renderSteps(canvas);
     else if(this.chartType === 'heart') this.renderHeart(canvas);
@@ -3213,6 +3219,21 @@ const C = {
     if(!this.range) return data;
     const cutoff = addDays(S.today(), -this.range);
     return data.filter(d => d.x >= cutoff);
+  },
+
+  renderActive(canvas) {
+    // Active energy trend in kJ (raw Apple Watch data) — how hard you're moving,
+    // separate from the total-burn kcal figure on the home dial.
+    const health = S.get('healthImport', null);
+    if(!health || !health.activeCal || !health.activeCal.length) {
+      clearCanvas(canvas, 'No active energy data. Sync from Apple Health.'); return;
+    }
+    const byDate = {};
+    health.activeCal.forEach(r => { byDate[r.date] = (byDate[r.date] || 0) + r.value; });
+    let data = Object.entries(byDate).map(([x,y]) => ({x, y: Math.round(y)})).sort((a,b) => a.x.localeCompare(b.x));
+    data = this.filterByRange(data);
+    if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 days of active energy'); return; }
+    drawBarChart(canvas, data, {color:'#f59e0b', label:'kJ'});
   },
 
   renderWeight(canvas) {
@@ -3467,7 +3488,7 @@ const C = {
 
     // Custom bar chart with zero line — green for deficit, amber for surplus
     const {ctx, w, h} = setupCanvas(canvas);
-    const pad = {top:20, right:16, bottom:30, left:55};
+    const pad = {top:24, right:16, bottom:34, left:56};
     const cw = w - pad.left - pad.right;
     const ch = h - pad.top - pad.bottom;
     const maxAbs = Math.max(Math.abs(Math.min(...data.map(d=>d.y))), Math.abs(Math.max(...data.map(d=>d.y))), 200);
@@ -3480,8 +3501,8 @@ const C = {
     for(let i=0;i<=4;i++){
       const y = pad.top + ch * (1 - i/4);
       ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
-      ctx.fillStyle = '#6b7280'; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
-      ctx.fillText(Math.round(yMin + yRange*i/4), pad.left-6, y+4);
+      ctx.fillStyle = '#cbd5e1'; ctx.font = '13px system-ui'; ctx.textAlign = 'right';
+      ctx.fillText(fmtAxis(yMin + yRange*i/4), pad.left-8, y+4);
     }
 
     // Zero line
@@ -3556,36 +3577,57 @@ function setupCanvas(canvas) {
 
 function clearCanvas(canvas, msg) {
   const {ctx, w, h} = setupCanvas(canvas);
-  ctx.fillStyle = '#6b7280';
-  ctx.font = '14px system-ui';
+  ctx.fillStyle = '#94a3b8';
+  ctx.font = '15px system-ui';
   ctx.textAlign = 'center';
   ctx.fillText(msg || 'No data', w/2, h/2);
 }
 
+// Compact, readable axis number: 12500 -> "12.5k", 900 -> "900", 74.3 -> "74.3"
+function fmtAxis(n, decimals) {
+  if(decimals) return n.toFixed(decimals);
+  n = Math.round(n);
+  const a = Math.abs(n);
+  if(a >= 10000) return (n/1000).toFixed(a >= 100000 ? 0 : 1).replace(/\.0$/,'') + 'k';
+  return n.toLocaleString();
+}
+
+// Dashed horizontal average line + label, shared by all charts.
+function drawAvgLine(ctx, x0, x1, y, color, mean, decimals, unit) {
+  if(!isFinite(y) || !isFinite(mean)) return;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]); ctx.globalAlpha = 0.9;
+  ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle = color; ctx.font = '600 12px system-ui'; ctx.textAlign = 'right';
+  ctx.fillText('avg ' + fmtAxis(mean, decimals) + (unit ? ' ' + unit : ''), x1 - 4, y - 5);
+}
+
 function drawLineChart(canvas, data, opts={}) {
   const {ctx, w, h} = setupCanvas(canvas);
-  const pad = {top:20, right:16, bottom:30, left:50};
+  const pad = {top:24, right:16, bottom:34, left:56};
   const cw = w - pad.left - pad.right;
   const ch = h - pad.top - pad.bottom;
   const yPad = opts.yPadding || 0;
   const yMin = Math.min(...data.map(d=>d.y)) - yPad;
   const yMax = Math.max(...data.map(d=>d.y)) + yPad;
   const yRange = yMax - yMin || 1;
+  const dec = opts.decimals !== undefined ? opts.decimals : 1;
 
   ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
   for(let i=0;i<=4;i++){
     const y = pad.top + ch * (1 - i/4);
     ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
-    ctx.fillStyle = '#6b7280'; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
-    ctx.fillText((yMin + yRange*i/4).toFixed(1), pad.left-6, y+4);
+    ctx.fillStyle = '#cbd5e1'; ctx.font = '13px system-ui'; ctx.textAlign = 'right';
+    ctx.fillText(fmtAxis(yMin + yRange*i/4, dec), pad.left-8, y+4);
   }
 
-  ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#94a3b8'; ctx.font = '12px system-ui'; ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(data.length / 5));
   data.forEach((d,i) => {
     if(i % step === 0 || i === data.length-1) {
       const x = pad.left + (i/(data.length-1)) * cw;
-      ctx.fillText(d.x.slice(5), x, h - pad.bottom + 16);
+      ctx.fillText(d.x.slice(5), x, h - pad.bottom + 18);
     }
   });
 
@@ -3606,6 +3648,10 @@ function drawLineChart(canvas, data, opts={}) {
     ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2); ctx.fill();
   });
 
+  // Average line
+  const mean = data.reduce((a,d)=>a+d.y,0)/data.length;
+  drawAvgLine(ctx, pad.left, w-pad.right, pad.top + ch*(1-(mean-yMin)/yRange), opts.color || '#3b82f6', mean, dec, '');
+
   canvas.onclick = (e) => {
     const rect = canvas.getBoundingClientRect();
     const cx = e.clientX - rect.left;
@@ -3621,7 +3667,7 @@ function drawLineChart(canvas, data, opts={}) {
 
 function drawBarChart(canvas, data, opts={}) {
   const {ctx, w, h} = setupCanvas(canvas);
-  const pad = {top:20, right:16, bottom:30, left:50};
+  const pad = {top:24, right:16, bottom:34, left:56};
   const cw = w - pad.left - pad.right;
   const ch = h - pad.top - pad.bottom;
   const yMax = Math.max(...data.map(d=>d.y)) * 1.1 || 1;
@@ -3630,8 +3676,8 @@ function drawBarChart(canvas, data, opts={}) {
   for(let i=0;i<=4;i++){
     const y = pad.top + ch * (1 - i/4);
     ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
-    ctx.fillStyle = '#6b7280'; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
-    ctx.fillText(Math.round(yMax*i/4), pad.left-6, y+4);
+    ctx.fillStyle = '#cbd5e1'; ctx.font = '13px system-ui'; ctx.textAlign = 'right';
+    ctx.fillText(fmtAxis(yMax*i/4), pad.left-8, y+4);
   }
 
   const barW = Math.max(4, (cw / data.length) * 0.6);
@@ -3646,14 +3692,18 @@ function drawBarChart(canvas, data, opts={}) {
     ctx.fill();
   });
 
-  ctx.fillStyle = '#6b7280'; ctx.font = '10px system-ui'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#94a3b8'; ctx.font = '12px system-ui'; ctx.textAlign = 'center';
   const step = Math.max(1, Math.floor(data.length / 5));
   data.forEach((d,i) => {
     if(i % step === 0 || i === data.length-1) {
       const x = pad.left + gap * i + gap/2;
-      ctx.fillText(d.x.slice(5), x, h - pad.bottom + 16);
+      ctx.fillText(d.x.slice(5), x, h - pad.bottom + 18);
     }
   });
+
+  // Average line
+  const mean = data.reduce((a,d)=>a+d.y,0)/data.length;
+  drawAvgLine(ctx, pad.left, w-pad.right, pad.top + ch*(1 - mean/yMax), opts.avgColor || '#f8fafc', mean, 0, opts.label || '');
 
   canvas.onclick = (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -3669,19 +3719,20 @@ function drawBarChart(canvas, data, opts={}) {
 
 function drawMultiLineChart(canvas, series, opts={}) {
   const {ctx, w, h} = setupCanvas(canvas);
-  const pad = {top:20, right:16, bottom:40, left:50};
+  const pad = {top:24, right:16, bottom:46, left:56};
   const cw = w - pad.left - pad.right;
   const ch = h - pad.top - pad.bottom;
   const yMin = opts.yMin !== undefined ? opts.yMin : Math.min(...series.flatMap(s => s.data.map(d=>d.y)));
   const yMax = opts.yMax !== undefined ? opts.yMax : Math.max(...series.flatMap(s => s.data.map(d=>d.y)));
   const yRange = yMax - yMin || 1;
+  const toY = v => pad.top + ch * (1 - (v - yMin)/yRange);
 
   ctx.strokeStyle = '#1f2937'; ctx.lineWidth = 1;
   for(let i=0;i<=4;i++){
     const y = pad.top + ch * (1 - i/4);
     ctx.beginPath(); ctx.moveTo(pad.left,y); ctx.lineTo(w-pad.right,y); ctx.stroke();
-    ctx.fillStyle = '#6b7280'; ctx.font = '11px system-ui'; ctx.textAlign = 'right';
-    ctx.fillText(Math.round(yMin + yRange*i/4), pad.left-6, y+4);
+    ctx.fillStyle = '#cbd5e1'; ctx.font = '13px system-ui'; ctx.textAlign = 'right';
+    ctx.fillText(fmtAxis(yMin + yRange*i/4), pad.left-8, y+4);
   }
 
   series.forEach(s => {
@@ -3690,23 +3741,26 @@ function drawMultiLineChart(canvas, series, opts={}) {
     ctx.beginPath();
     s.data.forEach((d,i) => {
       const x = pad.left + (i/(s.data.length-1)) * cw;
-      const y = pad.top + ch * (1 - (d.y - yMin)/yRange);
+      const y = toY(d.y);
       if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
     });
     ctx.stroke();
+    // Per-series average line (dashed, same colour)
+    const mean = s.data.reduce((a,d)=>a+d.y,0)/s.data.length;
+    drawAvgLine(ctx, pad.left, w-pad.right, toY(mean), s.color, mean, 0, '');
   });
 
   let lx = pad.left;
-  const ly = h - 8;
-  ctx.font = '11px system-ui';
+  const ly = h - 10;
+  ctx.font = '600 12px system-ui';
   series.forEach(s => {
     ctx.fillStyle = s.color;
-    ctx.fillRect(lx, ly-8, 12, 3);
-    lx += 16;
-    ctx.fillStyle = '#9ca3af';
+    ctx.fillRect(lx, ly-9, 14, 4);
+    lx += 18;
+    ctx.fillStyle = '#cbd5e1';
     ctx.textAlign = 'left';
     ctx.fillText(s.label, lx, ly-3);
-    lx += ctx.measureText(s.label).width + 16;
+    lx += ctx.measureText(s.label).width + 18;
   });
 }
 
