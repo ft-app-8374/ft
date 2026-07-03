@@ -185,26 +185,46 @@ textarea{resize:vertical;min-height:80px}
 .health-metric{background:#0f172a;border:1px solid #1e293b;border-radius:14px;padding:14px;text-align:center}
 .health-metric .hm-value{font-size:24px;font-weight:800;margin-bottom:2px}
 .health-metric .hm-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:0.5px}
+/* ── Homepage: header ── */
+.home-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}
+.home-title{font-size:29px;font-weight:800;letter-spacing:-.6px;margin:0;line-height:1}
+.home-scope{font-size:13px;color:#64748b;font-weight:600;margin-top:5px}
+.home-scope b{color:#94a3b8;font-weight:700}
 /* ── Weekly dials (homepage hero) ── */
-#weekly-hero{padding:20px 16px 22px}
-#weekly-hero h3{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;font-weight:800}
-.dial-row{display:flex;gap:6px;justify-content:space-between;margin-top:16px}
+#weekly-hero{padding:22px 12px 24px}
+.dial-row{display:flex;gap:4px;justify-content:space-between}
 .dial{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;text-align:center}
-.dial svg{width:100%;max-width:124px;height:auto;aspect-ratio:1/1;display:block}
+.dial svg{width:100%;height:auto;aspect-ratio:1/1;display:block}
 .dial .dial-center{font-weight:800;line-height:1}
 .dial .dial-unit{font-weight:700;fill:#64748b}
-.dial .dial-label{font-size:12px;color:#cbd5e1;margin-top:9px;font-weight:700;letter-spacing:.3px}
-.dial .dial-trend{display:inline-block;font-size:11px;font-weight:800;margin-top:6px;padding:3px 10px;border-radius:999px;line-height:1.4;white-space:nowrap}
+.dial .dial-label{font-size:13.5px;color:#e2e8f0;margin-top:12px;font-weight:800;letter-spacing:.2px}
+.dial .dial-trend{display:inline-block;font-size:12px;font-weight:800;margin-top:7px;padding:4px 11px;border-radius:999px;line-height:1.3;white-space:nowrap}
 .dial .up{color:#34d399;background:rgba(16,185,129,.15)}
 .dial .down{color:#f87171;background:rgba(239,68,68,.15)}
 .dial .flat{color:#94a3b8;background:rgba(148,163,184,.13)}
-.wk-focus{margin-top:22px;padding:18px;background:linear-gradient(150deg,#132135,#0f172a);border:1px solid #24344b;border-radius:18px}
+.dial-cap{text-align:center;font-size:12px;color:#64748b;font-weight:600;margin-top:18px;letter-spacing:.2px}
+.wk-focus{margin-top:18px;padding:20px;background:linear-gradient(150deg,#132135,#0f172a);border:1px solid #24344b;border-radius:18px}
 .wk-focus .wk-focus-eyebrow{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#60a5fa;font-weight:800;margin-bottom:10px}
-.wk-focus .wk-focus-head{font-size:21px;font-weight:800;line-height:1.25;color:#f8fafc;letter-spacing:-.2px}
-.wk-focus .wk-focus-sub{font-size:16px;line-height:1.55;color:#cbd5e1;margin-top:10px}
+.wk-focus .wk-focus-head{font-size:23px;font-weight:800;line-height:1.22;color:#f8fafc;letter-spacing:-.3px}
+.wk-focus .wk-focus-sub{font-size:16px;line-height:1.55;color:#cbd5e1;margin-top:11px}
 .wk-focus .wk-focus-sub b{color:#fff;font-weight:800}
-.wk-meta{font-size:13px;color:#64748b;margin-top:14px;text-align:center;font-weight:600}
+.wk-meta{font-size:13px;color:#64748b;margin-top:16px;text-align:center;font-weight:600}
 .wk-meta b{color:#94a3b8}
+/* ── Trends (homepage) ── */
+#trends-card .trends-h{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;font-weight:800;display:flex;align-items:center;gap:9px}
+.trends-scope{font-size:11px;letter-spacing:.4px;text-transform:none;color:#60a5fa;background:rgba(96,165,250,.12);padding:3px 10px;border-radius:999px;font-weight:700}
+.trend-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 0;border-bottom:1px solid #1e293b}
+.trend-row:last-child{border-bottom:none}
+.trend-row:first-child{padding-top:8px}
+.t-label{font-size:16px;color:#f1f5f9;font-weight:800}
+.t-sub{font-size:12.5px;color:#64748b;margin-top:3px;font-weight:600}
+.t-right{text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.t-val{font-size:24px;font-weight:800;color:#f8fafc;line-height:1}
+.t-val small{font-size:13px;color:#64748b;font-weight:700}
+.t-delta{display:inline-block;font-size:12px;font-weight:800;padding:3px 10px;border-radius:999px;line-height:1.3;white-space:nowrap}
+.t-delta.up{color:#34d399;background:rgba(16,185,129,.15)}
+.t-delta.down{color:#f87171;background:rgba(239,68,68,.15)}
+.t-delta.flat{color:#94a3b8;background:rgba(148,163,184,.13)}
 .health-metric .hm-unit{font-size:13px;color:#64748b;font-weight:400}
 .health-metric.wide{grid-column:span 2}
 
@@ -229,50 +249,23 @@ textarea{resize:vertical;min-height:80px}
 <!-- ── TODAY TAB (Dashboard) ── -->
 <div id="tab-today" class="tab-content active">
 <div class="wrap">
-  <div style="display:flex;justify-content:space-between;align-items:center">
-    <h2 style="margin-bottom:8px">Dashboard</h2>
-    <button class="btn btn-secondary btn-sm" onclick="switchTab('sync')" style="font-size:13px;padding:8px 14px">Sync Health</button>
+  <div class="home-head">
+    <div>
+      <h2 class="home-title">This Week</h2>
+      <div class="home-scope">Week on week · <b id="weekly-range"></b></div>
+    </div>
+    <button class="btn btn-secondary btn-sm" onclick="switchTab('sync')" style="font-size:13px;padding:9px 15px">Sync</button>
   </div>
 
   <div class="card" id="weekly-hero">
-    <div style="display:flex;justify-content:space-between;align-items:baseline">
-      <h3>This Week</h3>
-      <span class="wk-meta" id="weekly-range"></span>
-    </div>
     <div id="weekly-content">
       <div class="muted" style="text-align:center;padding:12px">Sync health data to see your weekly trends.</div>
     </div>
   </div>
 
-  <div class="date-nav">
-    <button class="btn-icon" onclick="T.prevDay()">&larr;</button>
-    <span class="date-str" id="today-date"></span>
-    <button class="btn-icon" onclick="T.nextDay()">&rarr;</button>
-  </div>
-
-  <div class="card" id="health-dashboard-card">
-    <h3>Health <span id="health-sync-ago" class="muted" style="text-transform:none;letter-spacing:0;font-weight:400"></span></h3>
-    <div class="health-grid" id="health-grid">
-      <div class="muted" style="grid-column:span 2;text-align:center;padding:12px">No health data synced yet. Go to Sync tab to import.</div>
-    </div>
-  </div>
-
-
-  <div class="card">
-    <h3>Today's Summary</h3>
-    <div id="today-summary"></div>
-  </div>
-
-  <div class="card" id="insights-card">
-    <h3>Insights</h3>
+  <div class="card" id="trends-card">
+    <h3 class="trends-h">Trends <span class="trends-scope">week on week</span></h3>
     <div id="insights-content"></div>
-  </div>
-
-  <div id="coach-dashboard-section">
-    <div class="card" style="border-left:3px solid #3b82f6">
-      <h3 style="color:#3b82f6">Coach</h3>
-      <div id="coach-content"></div>
-    </div>
   </div>
 
 </div>
@@ -554,7 +547,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 57;
+const APP_VERSION = 58;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -827,72 +820,9 @@ const T = {
   },
 
   render() {
-    const d = this.viewDate;
-    document.getElementById('today-date').textContent = d === S.today() ? 'Today' : fmtDate(d);
-    const entry = this.getDaily(d);
-
-    // Weekly hero (historical this-week-vs-last-week — independent of viewed day)
+    // Homepage is a clean weekly view: dials (activity) + trends (training).
+    // Day-level logging lives in the Food / Workout / Sync tabs.
     this.renderWeekly();
-
-    // Health dashboard
-    this.renderHealthDashboard(d);
-
-    // Summary — live dashboard with calories, food, and workout data
-    const totalCal = entry.foods.reduce((a,f) => a+f.cal, 0);
-    const totalProtein = entry.foods.reduce((a,f) => a+(f.protein||0), 0);
-    const totalCarbs = entry.foods.reduce((a,f) => a+(f.carbs||0), 0);
-    const totalFat = entry.foods.reduce((a,f) => a+(f.fat||0), 0);
-    const workouts = S.get('workouts', []).filter(w => w.date === d && w.source !== 'watch');
-    const watchWorkouts = S.get('workouts', []).filter(w => w.date === d && w.source === 'watch');
-
-    let summary = '';
-    const hasFoods = entry.foods.length > 0;
-    const hasWorkouts = workouts.length > 0;
-    const hasWatchData = watchWorkouts.length > 0;
-    const hasAnything = hasFoods || hasWorkouts || hasWatchData || entry.energy || entry.sleep;
-
-    // Calories & food
-    if(hasFoods) {
-      summary += `<div style="display:flex;gap:16px;align-items:baseline;margin-bottom:6px">`;
-      summary += `<div><span style="font-size:24px;font-weight:700">${totalCal}</span> <span class="muted">cal</span></div>`;
-      if(totalProtein || totalCarbs || totalFat) {
-        summary += `<div class="muted small">P: ${totalProtein}g · C: ${totalCarbs}g · F: ${totalFat}g</div>`;
-      }
-      summary += `</div>`;
-      // Show recent food items
-      const recentFoods = entry.foods.slice(-3);
-      summary += `<div class="muted small" style="margin-bottom:4px">${recentFoods.map(f => `${f.name} (${f.cal})`).join(' · ')}${entry.foods.length > 3 ? ` · +${entry.foods.length-3} more` : ''}</div>`;
-    } else {
-      summary += `<div style="margin-bottom:6px"><span style="font-size:20px;font-weight:600">0</span> <span class="muted">cal logged</span></div>`;
-    }
-
-    // Workout data
-    if(hasWorkouts) {
-      const totalSets = workouts.reduce((a,w) => a + w.exercises.reduce((b,e) => b+e.sets.length, 0), 0);
-      const totalExercises = workouts.reduce((a,w)=>a+w.exercises.length,0);
-      const totalVolume = workouts.reduce((a,w) => a + w.exercises.reduce((b,e) => b + e.sets.reduce((c,s) => c + (s.weight||0) * (s.reps||0), 0), 0), 0);
-      summary += `<div style="display:flex;gap:16px;margin-top:8px;padding-top:8px;border-top:1px solid #334155">`;
-      summary += `<div><b>${totalExercises}</b> <span class="muted small">exercises</span></div>`;
-      summary += `<div><b>${totalSets}</b> <span class="muted small">sets</span></div>`;
-      if(totalVolume > 0) summary += `<div><b>${(totalVolume/1000).toFixed(1)}t</b> <span class="muted small">volume</span></div>`;
-      summary += `</div>`;
-    }
-
-    // Watch activity data
-    if(hasWatchData) {
-      const watchCals = watchWorkouts.reduce((a,w) => a + (w.calories || 0), 0);
-      const watchMins = watchWorkouts.reduce((a,w) => a + (w.duration || 0), 0);
-      if(watchCals || watchMins) {
-        summary += `<div style="display:flex;gap:16px;margin-top:6px" class="muted small">`;
-        if(watchCals) summary += `<div>🔥 ${watchCals} cal burned</div>`;
-        if(watchMins) summary += `<div>⏱ ${watchMins} min active</div>`;
-        summary += `</div>`;
-      }
-    }
-
-    document.getElementById('today-summary').innerHTML = summary || '<span class="muted">Start logging food or workouts to see your dashboard.</span>';
-
-    // Insights
     this.renderInsights();
   },
 
@@ -959,12 +889,12 @@ const T = {
 
     // ── Dials (big, at-a-glance) ──
     const dial = (m) => {
-      const r = 52, C = 2*Math.PI*r;
+      const r = 55, C = 2*Math.PI*r;
       const frac = Math.max(0, Math.min(1, m.goal ? m.tw.avg/m.goal : 0));
       const off = C * (1 - frac);
       const avg = Math.round(m.tw.avg);
       const big = avg >= 10000 ? Math.round(avg/1000)+'k' : avg.toLocaleString();
-      const fs = big.length >= 6 ? 20 : big.length >= 5 ? 23 : big.length === 4 ? 27 : 31;
+      const fs = big.length >= 6 ? 23 : big.length >= 5 ? 27 : big.length === 4 ? 31 : 35;
       let cls = 'flat', txt = 'no last wk';
       if(m.lw.avg > 0) {
         const pct = Math.round((m.tw.avg - m.lw.avg) / m.lw.avg * 100);
@@ -973,17 +903,18 @@ const T = {
       } else if(m.tw.avg > 0) { cls = 'up'; txt = '▲ new'; }
       return `<div class="dial">
         <svg viewBox="0 0 128 128">
-          <circle cx="64" cy="64" r="${r}" fill="none" stroke="#1e293b" stroke-width="11"/>
-          <circle cx="64" cy="64" r="${r}" fill="none" stroke="${m.color}" stroke-width="11" stroke-linecap="round"
+          <circle cx="64" cy="64" r="${r}" fill="none" stroke="#1e293b" stroke-width="13"/>
+          <circle cx="64" cy="64" r="${r}" fill="none" stroke="${m.color}" stroke-width="13" stroke-linecap="round"
             stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 64 64)"/>
-          <text x="64" y="62" text-anchor="middle" class="dial-center" fill="#f8fafc" font-size="${fs}">${big}</text>
-          <text x="64" y="84" text-anchor="middle" class="dial-unit" font-size="12">${m.unit}</text>
+          <text x="64" y="61" text-anchor="middle" class="dial-center" fill="#f8fafc" font-size="${fs}">${big}</text>
+          <text x="64" y="85" text-anchor="middle" class="dial-unit" font-size="12.5">${m.unit}</text>
         </svg>
         <div class="dial-label">${m.label}</div>
         <div class="dial-trend ${cls}">${txt}</div>
       </div>`;
     };
     let html = `<div class="dial-row">${METRICS.map(dial).join('')}</div>`;
+    html += `<div class="dial-cap">Daily average this week · ▲▼ vs last week</div>`;
 
     // ── One clear focus: the single metric most worth attention this week ──
     const proj = (m) => daysElapsed > 0 ? m.tw.sum / daysElapsed * 7 : 0;
@@ -1147,93 +1078,65 @@ const T = {
 
   renderInsights() {
     const el = document.getElementById('insights-content');
-    let html = '';
+    if(!el) return;
     const allWorkouts = S.get('workouts', []);
     const workouts = allWorkouts.filter(w => w.source !== 'watch');
-    const daily = S.get('daily', []);
+    const rows = [];
 
-    // Workout streak (count all activity including watch)
-    const sortedWorkouts = allWorkouts.slice().sort((a,b) => b.date.localeCompare(a.date));
-    let streak = 0;
-    let checkDate = S.today();
-    for(let i = 0; i < 60; i++) {
-      if(sortedWorkouts.find(w => w.date === checkDate)) {
-        streak++;
-        checkDate = addDays(checkDate, -1);
-      } else if(i === 0) {
-        checkDate = addDays(checkDate, -1);
-        continue;
-      } else {
-        break;
-      }
-    }
+    // Clean, large-text trend rows. Each states its timeline (week on week).
+    const pill = (pct) => {
+      const cls = pct > 1 ? 'up' : pct < -1 ? 'down' : 'flat';
+      const arrow = pct > 1 ? '▲' : pct < -1 ? '▼' : '▬';
+      return `<span class="t-delta ${cls}">${arrow} ${pct>0?'+':''}${pct}%</span>`;
+    };
+    const row = (label, sub, valHtml, extra='') =>
+      `<div class="trend-row"><div><div class="t-label">${label}</div><div class="t-sub">${sub}</div></div>`
+      + `<div class="t-right">${valHtml}${extra}</div></div>`;
 
-    if(streak > 0) {
-      html += `<div class="insight-card"><div class="insight-title">Workout Streak</div>
-        <div class="insight-body"><span class="streak-badge">🔥 ${streak} day${streak>1?'s':''}</span></div></div>`;
-    }
-
-    // Weekly volume comparison
     const thisWeekStart = weekStart(S.today());
     const lastWeekStart = addDays(thisWeekStart, -7);
-    const thisWeekWorkouts = workouts.filter(w => w.date >= thisWeekStart);
-    const lastWeekWorkouts = workouts.filter(w => w.date >= lastWeekStart && w.date < thisWeekStart);
-    const thisWeekVol = thisWeekWorkouts.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
-    const lastWeekVol = lastWeekWorkouts.reduce((a,w) => a+w.exercises.reduce((b,e) => b+e.sets.reduce((c,s) => c+s.weight*s.reps, 0), 0), 0);
+    const twW = workouts.filter(w => w.date >= thisWeekStart);
+    const lwW = workouts.filter(w => w.date >= lastWeekStart && w.date < thisWeekStart);
+    const vol = ws => ws.reduce((a,w) => a + w.exercises.reduce((b,e) => b + e.sets.reduce((c,s) => c + (s.weight||0)*(s.reps||0), 0), 0), 0);
+    const twVol = vol(twW), lwVol = vol(lwW);
 
-    if(lastWeekVol > 0 && thisWeekVol > 0) {
-      const change = ((thisWeekVol - lastWeekVol) / lastWeekVol * 100).toFixed(0);
-      const dir = change > 0 ? 'up' : change < 0 ? 'down' : 'same';
-      const badge = dir === 'up' ? 'badge-green' : dir === 'down' ? 'badge-red' : '';
-      html += `<div class="insight-card"><div class="insight-title">Weekly Volume</div>
-        <div class="insight-body">This week: <b>${Math.round(thisWeekVol)}</b>kg vs last week: <b>${Math.round(lastWeekVol)}</b>kg
-        <span class="${badge} badge">${change>0?'+':''}${change}%</span></div></div>`;
+    // Training volume — week on week
+    if(twVol > 0 || lwVol > 0) {
+      const valTxt = twVol >= 1000 ? (twVol/1000).toFixed(1)+'<small> t</small>' : Math.round(twVol)+'<small> kg</small>';
+      const extra = (lwVol > 0 && twVol > 0) ? pill(Math.round((twVol-lwVol)/lwVol*100))
+                  : (twVol > 0 ? '<span class="t-delta up">▲ new</span>' : '');
+      rows.push(row('Training volume', `This week vs ${Math.round(lwVol).toLocaleString()} kg last week`, `<div class="t-val">${valTxt}</div>`, extra));
     }
 
-    // Recent PRs
+    // Sessions — week on week
+    if(twW.length > 0 || lwW.length > 0) {
+      const extra = lwW.length > 0 ? pill(Math.round((twW.length-lwW.length)/Math.max(1,lwW.length)*100))
+                  : (twW.length > 0 ? '<span class="t-delta up">▲ new</span>' : '');
+      rows.push(row('Sessions', `This week vs ${lwW.length} last week`, `<div class="t-val">${twW.length}</div>`, extra));
+    }
+
+    // Current streak (counts all activity, incl. watch)
+    const sorted = allWorkouts.slice().sort((a,b) => b.date.localeCompare(a.date));
+    let streak = 0, checkDate = S.today();
+    for(let i = 0; i < 60; i++) {
+      if(sorted.find(w => w.date === checkDate)) { streak++; checkDate = addDays(checkDate, -1); }
+      else if(i === 0) { checkDate = addDays(checkDate, -1); continue; }
+      else break;
+    }
+    if(streak > 0) {
+      rows.push(row('Current streak', 'Consecutive days active', `<div class="t-val" style="color:#f59e0b">🔥 ${streak}<small> day${streak>1?'s':''}</small></div>`));
+    }
+
+    // Recent PRs (last 7 days)
     const exercises = S.get('exercises', []);
     const recentPRs = exercises.filter(e => e.pr && e.pr.date && daysBetween(e.pr.date, S.today()) <= 7);
     if(recentPRs.length) {
-      html += `<div class="insight-card"><div class="insight-title">Recent PRs</div>
-        <div class="insight-body">${recentPRs.map(e => `<div>${e.name}: ${e.pr.weight}kg x ${e.pr.reps}</div>`).join('')}</div></div>`;
+      const detail = recentPRs.slice(0,3).map(e => `${e.name} ${e.pr.weight}kg×${e.pr.reps}`).join(' · ');
+      rows.push(row(`New PR${recentPRs.length>1?'s':''}`, detail, `<div class="t-val">🏆<small> ${recentPRs.length}</small></div>`));
     }
 
-    // Health trends
-    const health = S.get('healthImport', null);
-    if(health) {
-      // Deduplicate steps by date (take max per day)
-      const stepsByDate = {};
-      (health.steps || []).forEach(r => {
-        if(!stepsByDate[r.date] || r.value > stepsByDate[r.date]) stepsByDate[r.date] = r.value;
-      });
-      const recentSteps = Object.entries(stepsByDate).sort((a,b) => b[0].localeCompare(a[0])).slice(0, 7);
-      if(recentSteps.length >= 3) {
-        const avgSteps = Math.round(recentSteps.reduce((a,r) => a+r[1], 0) / recentSteps.length);
-        html += `<div class="insight-card"><div class="insight-title">Avg Steps (${recentSteps.length}d)</div>
-          <div class="insight-body"><b>${avgSteps.toLocaleString()}</b> steps/day</div></div>`;
-      }
-    }
-
-    // Recommendations
-    const recs = [];
-    if(streak === 0) recs.push('Get a workout in today to start building a streak!');
-    const recentDaily = daily.filter(d => d.energy && d.sleep).slice(-14);
-    if(recentDaily.length >= 3) {
-      const recentSleep = recentDaily.slice(-3);
-      const avgRecentSleep = recentSleep.reduce((a,d) => a+d.sleep, 0) / recentSleep.length;
-      if(avgRecentSleep < 3) recs.push('Your sleep quality has been low. Consider earlier bedtimes.');
-    }
-    const measurements = S.get('measurements', []).filter(m => m.weight);
-    if(measurements.length >= 4) {
-      const recent = measurements.slice(-4);
-      const trend = recent[recent.length-1].weight - recent[0].weight;
-      if(Math.abs(trend) < 0.3) recs.push('Weight stable — adjust calories if you have a goal.');
-    }
-    if(!recs.length) recs.push('Keep it up! Consistency is key.');
-    html += `<div class="insight-card"><div class="insight-title">Tips</div>
-      <div class="insight-body">${recs.map(r => `<div style="margin:4px 0">• ${r}</div>`).join('')}</div></div>`;
-
-    el.innerHTML = html;
+    el.innerHTML = rows.length ? rows.join('')
+      : '<div class="muted" style="text-align:center;padding:14px">Log a workout to start tracking week-on-week trends.</div>';
   },
 
   storeNetCalories(date, net, eaten, burned) {
