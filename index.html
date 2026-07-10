@@ -225,6 +225,20 @@ textarea{resize:vertical;min-height:80px}
 .t-delta.up{color:#34d399;background:rgba(16,185,129,.15)}
 .t-delta.down{color:#f87171;background:rgba(239,68,68,.15)}
 .t-delta.flat{color:#94a3b8;background:rgba(148,163,184,.13)}
+/* ── Watch activity (workout tab) ── */
+.wa-breakdown{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0 6px}
+.wa-chip{display:flex;align-items:center;gap:7px;background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:9px 12px}
+.wa-chip .wa-emoji{font-size:19px;line-height:1}
+.wa-chip .wa-type{font-size:14px;font-weight:800;color:#f1f5f9}
+.wa-chip .wa-meta{font-size:12px;color:#64748b;font-weight:600}
+.wa-log{margin-top:12px;border-top:1px solid #1e293b;padding-top:8px}
+.wa-item{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid #14202f}
+.wa-item:last-child{border-bottom:none}
+.wa-item .wa-i-emoji{font-size:20px;flex-shrink:0}
+.wa-item .wa-i-main{flex:1;min-width:0}
+.wa-item .wa-i-type{font-size:15px;font-weight:800;color:#f1f5f9}
+.wa-item .wa-i-stats{font-size:12.5px;color:#94a3b8;font-weight:600;margin-top:1px}
+.wa-item .wa-i-date{font-size:12px;color:#64748b;font-weight:600;flex-shrink:0}
 .health-metric .hm-unit{font-size:13px;color:#64748b;font-weight:400}
 .health-metric.wide{grid-column:span 2}
 
@@ -310,6 +324,12 @@ textarea{resize:vertical;min-height:80px}
   <!-- Watch Activity Summary -->
   <div class="card" id="workout-watch-summary" style="display:none">
     <div class="row" style="gap:12px" id="workout-watch-metrics"></div>
+  </div>
+
+  <!-- Apple Watch workouts (type breakdown + recent log) -->
+  <div class="card" id="watch-activity-card" style="display:none">
+    <h3>⌚ Watch Activity <span class="trends-scope" style="margin-left:4px">this week</span></h3>
+    <div id="watch-activity-content"></div>
   </div>
 
   <!-- Suggested Workout -->
@@ -492,6 +512,7 @@ textarea{resize:vertical;min-height:80px}
     <button class="pill" data-chart="steps" onclick="C.switchChart('steps')">Steps</button>
     <button class="pill" data-chart="heart" onclick="C.switchChart('heart')">Heart</button>
     <button class="pill" data-chart="netcal" onclick="C.switchChart('netcal')">Net Cal</button>
+    <button class="pill" data-chart="activity" onclick="C.switchChart('activity')">Activity</button>
   </div>
 
   <div class="card">
@@ -547,9 +568,19 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 58;
+const APP_VERSION = 60;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
+
+// Steps arrive already double-counted: the iOS Shortcut sums iPhone + Apple Watch
+// samples into one daily total, so the number stored is ~1.78× the real figure.
+// Calibrated against Apple Health: 3 Jul 11,600 real vs 20,920 logged (1.80×),
+// 7 Jul 14,524 real vs 25,492 logged (1.76×) → mean 1.78×. We divide every step
+// value (incoming imports + a one-time history migration) by this. Tune here if it
+// drifts; bump STEP_FIX_VERSION to re-run the historical migration after changing it.
+const STEP_INFLATION = 1.78;
+const STEP_FIX_VERSION = 1;
+const correctSteps = (v) => Math.round((Number(v) || 0) / STEP_INFLATION);
 
 /* ── IndexedDB Backup Layer ── */
 const Backup = {
@@ -2333,6 +2364,50 @@ Return ONLY a JSON array: [{"name":"...","cat":"...","muscles":["..."],"tips":["
     if(exMin > 0) html += `<div class="health-metric" style="flex:1;text-align:center"><div class="hm-value" style="color:#10b981">${Math.round(exMin)} <span class="hm-unit">min</span></div><div class="hm-label">⌚ Exercise</div></div>`;
     if(aCal > 0) html += `<div class="health-metric" style="flex:1;text-align:center"><div class="hm-value" style="color:#f59e0b">${Math.round(aCal).toLocaleString()} <span class="hm-unit">kcal</span></div><div class="hm-label">⌚ Active Cal</div></div>`;
     el.innerHTML = html;
+    this.renderWatchActivities();
+  },
+
+  // Apple Watch workouts imported from the Shortcut: this-week type breakdown
+  // + a recent log. Each carries its activity type (Run, Strength, HIIT, …).
+  renderWatchActivities() {
+    const card = document.getElementById('watch-activity-card');
+    const el = document.getElementById('watch-activity-content');
+    if(!card || !el) return;
+    const acts = S.get('workouts', []).filter(w => w.source === 'watch' && (w.type || w.minutes || w.calories));
+    if(!acts.length) { card.style.display = 'none'; return; }
+    card.style.display = '';
+
+    // This-week breakdown by type (count + total minutes)
+    const weekStartD = weekStart(S.today());
+    const wk = acts.filter(w => w.date >= weekStartD);
+    const byType = {};
+    wk.forEach(w => {
+      const k = w.type || 'Workout';
+      if(!byType[k]) byType[k] = {emoji: w.emoji || '⌚', count: 0, mins: 0, cal: 0};
+      byType[k].count++; byType[k].mins += (w.minutes||0); byType[k].cal += (w.calories||0);
+    });
+    const types = Object.entries(byType).sort((a,b) => b[1].mins - a[1].mins);
+    let html = '';
+    if(types.length) {
+      html += '<div class="wa-breakdown">' + types.map(([t,v]) =>
+        `<div class="wa-chip"><span class="wa-emoji">${v.emoji}</span><div><div class="wa-type">${t}</div>`
+        + `<div class="wa-meta">${v.count}× · ${Math.round(v.mins)} min</div></div></div>`).join('') + '</div>';
+    } else {
+      html += '<div class="muted small" style="margin-bottom:4px">No watch workouts yet this week.</div>';
+    }
+
+    // Recent log (last 8, newest first)
+    const recent = acts.slice().sort((a,b) => (b.date+String(b.id)).localeCompare(a.date+String(a.id))).slice(0,8);
+    html += '<div class="wa-log">' + recent.map(w => {
+      const stats = [w.minutes ? `${w.minutes} min` : '', w.calories ? `${w.calories} kcal` : '', w.distance ? `${w.distance} km` : '']
+        .filter(Boolean).join(' · ');
+      return `<div class="wa-item"><span class="wa-i-emoji">${w.emoji||'⌚'}</span>`
+        + `<div class="wa-i-main"><div class="wa-i-type">${w.type||'Workout'}</div>`
+        + `<div class="wa-i-stats">${stats||'—'}</div></div>`
+        + `<span class="wa-i-date">${w.date === S.today() ? 'Today' : fmtDate(w.date)}</span></div>`;
+    }).join('') + '</div>';
+
+    el.innerHTML = html;
   },
 
   renderHistory() {
@@ -2474,6 +2549,32 @@ const M = {
   }
 };
 
+/* Map an Apple Watch workout type (HKWorkoutActivityType string, as the
+   Shortcuts "Workout Type" action outputs it) to a clean label + emoji.
+   Matching is substring-based so localised / verbose names still resolve. */
+function normalizeActivity(raw) {
+  const s = String(raw || '').toLowerCase().trim();
+  const T = [
+    ['high intensity','HIIT','🔥'], ['hiit','HIIT','🔥'], ['interval','HIIT','🔥'],
+    ['strength','Strength','🏋️'], ['weight','Strength','🏋️'],
+    ['run','Running','🏃'], ['jog','Running','🏃'],
+    ['walk','Walking','🚶'], ['hik','Hiking','🥾'],
+    ['cycl','Cycling','🚴'], ['bike','Cycling','🚴'], ['spin','Cycling','🚴'],
+    ['swim','Swimming','🏊'], ['row','Rowing','🚣'],
+    ['yoga','Yoga','🧘'], ['pilates','Pilates','🤸'], ['core','Core','🧱'],
+    ['elliptical','Elliptical','🌀'], ['stair','Stairs','🪜'],
+    ['box','Boxing','🥊'], ['kick','Boxing','🥊'], ['martial','Martial Arts','🥋'],
+    ['tennis','Tennis','🎾'], ['golf','Golf','⛳'], ['basket','Basketball','🏀'],
+    ['soccer','Football','⚽'], ['football','Football','⚽'],
+    ['dance','Dance','💃'], ['cooldown','Cooldown','🧊'], ['cool down','Cooldown','🧊'],
+    ['functional','Functional','🏋️'], ['flexib','Stretching','🤸'], ['stretch','Stretching','🤸'],
+    ['mind','Mindful','🧘'], ['breath','Breathwork','🌬️'],
+  ];
+  for(const [needle,label,emoji] of T) if(s.includes(needle)) return {label, emoji};
+  if(!s) return {label:'Workout', emoji:'⌚'};
+  return {label: raw.replace(/\b\w/g, c => c.toUpperCase()).slice(0,22), emoji:'⌚'};
+}
+
 /* ══════════════════════════════════════════
    IMPORT/SYNC MODULE (I)
    ══════════════════════════════════════════ */
@@ -2546,7 +2647,11 @@ const I = {
     for(const [key, field] of Object.entries(fieldMap)) {
       if(data[key] !== undefined && data[key] !== null && data[key] !== '') {
         const val = parseFloat(data[key]);
-        if(!isNaN(val) && val > 0) health[field].push({date: importDate, value: field === 'distance' ? Math.round(val*100)/100 : Math.round(val*10)/10});
+        if(!isNaN(val) && val > 0) {
+        const rec = {date: importDate, value: field === 'distance' ? Math.round(val*100)/100 : Math.round(val*10)/10};
+        if(field === 'steps') { rec.raw = Math.round(val); rec.value = correctSteps(val); }  // keep raw; store de-double-counted value
+        health[field].push(rec);
+      }
       }
     }
 
@@ -2563,9 +2668,37 @@ const I = {
       }
     }
 
+    // Apple Watch workouts (optional): the Shortcut can send a `workouts`
+    // (or `activities`) array, each item carrying its activity type + stats.
+    // Stored as source:'watch' entries (exercises:[] so volume maths stays 0).
+    let watchN = 0;
+    let rawActs = data.workouts || data.activities || data.watchWorkouts;
+    if(typeof rawActs === 'string') { try { rawActs = JSON.parse(rawActs); } catch { rawActs = null; } }
+    if(Array.isArray(rawActs)) {
+      const workouts = S.get('workouts', []).filter(w => !(w.source === 'watch' && w.date === importDate));
+      rawActs.forEach((a, i) => {
+        if(!a || typeof a !== 'object') return;
+        const rawType = a.type ?? a.activityType ?? a.workoutType ?? a.name ?? a.activity ?? '';
+        let mins = parseFloat(a.minutes ?? a.duration ?? a.mins ?? a.time ?? 0) || 0;
+        if(mins > 600) mins = Math.round(mins / 60);   // looks like seconds → minutes
+        const cal = Math.round(parseFloat(a.calories ?? a.activeCal ?? a.energy ?? a.cal ?? 0) || 0);
+        const dist = Math.round((parseFloat(a.distance ?? a.km ?? a.dist ?? 0) || 0) * 100) / 100;
+        const norm = normalizeActivity(rawType);
+        if(!rawType && !mins && !cal) return;   // empty row
+        workouts.push({
+          id: `watch_${importDate}_${i}`, date: importDate, source: 'watch',
+          type: norm.label, emoji: norm.emoji, rawType: String(rawType || ''),
+          minutes: Math.round(mins), calories: cal, distance: dist, exercises: [],
+        });
+        watchN++;
+      });
+      S.set('workouts', workouts);
+    }
+
     // Sync log
     if(!health.syncLog) health.syncLog = [];
     const parts = [];
+    if(watchN) parts.push(`${watchN} watch workout${watchN>1?'s':''}`);
     if(data.steps) parts.push(`${Math.round(data.steps).toLocaleString()} steps`);
     if(data.activeCal) parts.push(`${Math.round(data.activeCal)} cal`);
     if(data.sleep) parts.push(`${(Math.round(data.sleep*10)/10)}h sleep`);
@@ -3115,6 +3248,7 @@ const C = {
     else if(this.chartType === 'steps') this.renderSteps(canvas);
     else if(this.chartType === 'heart') this.renderHeart(canvas);
     else if(this.chartType === 'netcal') this.renderNetCal(canvas);
+    else if(this.chartType === 'activity') this.renderActivityTypes(canvas);
     else if(this.chartType === 'wellness') this.renderWellness(canvas);
   },
 
@@ -3137,6 +3271,42 @@ const C = {
     data = this.filterByRange(data);
     if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 days of active energy'); return; }
     drawBarChart(canvas, data, {color:'#f59e0b', label:'kJ'});
+  },
+
+  // Apple Watch workouts broken down by activity type (total minutes) over the
+  // selected range — horizontal bars, since the x-axis is categories not dates.
+  renderActivityTypes(canvas) {
+    const cutoff = this.range ? addDays(S.today(), -this.range) : '0000';
+    const acts = S.get('workouts', []).filter(w => w.source === 'watch' && w.date >= cutoff && (w.minutes || w.calories));
+    if(!acts.length) { clearCanvas(canvas, 'No watch workouts in range. Sync from Apple Health (see Sync tab).'); return; }
+    const byType = {};
+    acts.forEach(w => {
+      const k = w.type || 'Workout';
+      if(!byType[k]) byType[k] = {emoji: w.emoji || '⌚', mins: 0, count: 0};
+      byType[k].mins += (w.minutes || 0); byType[k].count++;
+    });
+    const rows = Object.entries(byType).map(([t,v]) => ({t, ...v})).sort((a,b) => b.mins - a.mins).slice(0, 8);
+    const {ctx, w, h} = setupCanvas(canvas);
+    const pad = {top:16, right:54, bottom:14, left:118};
+    const ch = h - pad.top - pad.bottom;
+    const max = Math.max(...rows.map(r => r.mins), 1);
+    const rowH = ch / rows.length;
+    const barH = Math.min(30, rowH * 0.62);
+    const colors = ['#10b981','#3b82f6','#f59e0b','#8b5cf6','#ec4899','#14b8a6','#eab308','#f43f5e'];
+    rows.forEach((r, i) => {
+      const cy = pad.top + rowH * i + rowH/2;
+      // label (emoji + type)
+      ctx.fillStyle = '#e2e8f0'; ctx.font = '600 13px system-ui'; ctx.textAlign = 'left';
+      ctx.fillText(`${r.emoji} ${r.t}`.slice(0,16), 6, cy + 4);
+      // bar
+      const bw = (r.mins / max) * (w - pad.left - pad.right);
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.beginPath(); ctx.roundRect(pad.left, cy - barH/2, Math.max(2, bw), barH, 4); ctx.fill();
+      // value
+      ctx.fillStyle = '#f8fafc'; ctx.font = '600 12px system-ui'; ctx.textAlign = 'left';
+      ctx.fillText(`${Math.round(r.mins)}m · ${r.count}×`, pad.left + Math.max(2, bw) + 6, cy + 4);
+    });
+    document.getElementById('chart-tap-info').textContent = `${acts.length} watch workout${acts.length>1?'s':''} · total ${Math.round(rows.reduce((a,r)=>a+r.mins,0))} min`;
   },
 
   renderWeight(canvas) {
@@ -3284,8 +3454,9 @@ const C = {
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([5,4]); ctx.globalAlpha = 0.85;
       ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(w - pad.right, y); ctx.stroke();
       ctx.restore();
-      ctx.fillStyle = color; ctx.font = '9px system-ui'; ctx.textAlign = 'left';
-      ctx.fillText(`avg ${Math.round(mean).toLocaleString()} ${label}`, pad.left + 4, y - 3);
+      // White label text so the average reads clearly on the dark chart
+      ctx.fillStyle = '#f8fafc'; ctx.font = '600 11px system-ui'; ctx.textAlign = 'left';
+      ctx.fillText(`avg ${Math.round(mean).toLocaleString()} ${label}`.trim(), pad.left + 4, y - 4);
     };
     if(hasCal)  avgLine(meanOf(calData),  calMax,  '#f59e0b', '');
     if(hasMins) avgLine(meanOf(minsData), minsMax, '#3b82f6', 'm');
@@ -3502,7 +3673,8 @@ function drawAvgLine(ctx, x0, x1, y, color, mean, decimals, unit) {
   ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]); ctx.globalAlpha = 0.9;
   ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
   ctx.restore();
-  ctx.fillStyle = color; ctx.font = '600 12px system-ui'; ctx.textAlign = 'right';
+  // Dashed line keeps the series colour; the "avg" label is white for legibility (Dean's ask).
+  ctx.fillStyle = '#ffffff'; ctx.font = '700 12px system-ui'; ctx.textAlign = 'right';
   ctx.fillText('avg ' + fmtAxis(mean, decimals) + (unit ? ' ' + unit : ''), x1 - 4, y - 5);
 }
 
@@ -3730,6 +3902,23 @@ async function initApp() {
     }
     S.set('exercises', exercises);
     S.set('_seeded_stats_mar12', true);
+  }
+
+  // One-time: retro-correct historical steps for the iPhone+Watch double-count.
+  // Runs once per STEP_FIX_VERSION so re-tuning STEP_INFLATION can re-apply cleanly.
+  if(S.get('stepFixApplied', 0) < STEP_FIX_VERSION) {
+    const h = S.get('healthImport', null);
+    if(h && h.lastImport && Array.isArray(h.steps) && h.steps.length) {
+      // Preserve the original inflated figure as `raw` so re-tuning is idempotent:
+      // a record with no `raw` yet still holds the inflated value in `value`.
+      h.steps = h.steps.map(r => {
+        const raw = (r.raw != null) ? r.raw : Math.round(r.value);
+        return {...r, raw, value: correctSteps(raw)};
+      });
+      S.set('healthImport', h);
+      console.log(`Steps history corrected (÷${STEP_INFLATION}) — ${h.steps.length} days`);
+    }
+    S.set('stepFixApplied', STEP_FIX_VERSION);
   }
 
   if(I.handleURLImport()) {
