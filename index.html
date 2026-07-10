@@ -208,6 +208,19 @@ textarea{resize:vertical;min-height:80px}
 .wk-focus .wk-focus-head{font-size:23px;font-weight:800;line-height:1.22;color:#f8fafc;letter-spacing:-.3px}
 .wk-focus .wk-focus-sub{font-size:16px;line-height:1.55;color:#cbd5e1;margin-top:11px}
 .wk-focus .wk-focus-sub b{color:#fff;font-weight:800}
+/* ── Meaningful "this week" tiles (recovery / weight / load / PRs) ── */
+.wk-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px}
+.wk-tile{background:#0f172a;border:1px solid #1e293b;border-radius:16px;padding:14px 15px;min-width:0}
+.wk-tile .wt-label{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;font-weight:800}
+.wk-tile .wt-big{font-size:26px;font-weight:800;color:#f8fafc;margin-top:6px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wk-tile .wt-big small{font-size:14px;color:#94a3b8;font-weight:700}
+.wk-tile .wt-sub{font-size:13px;color:#94a3b8;font-weight:600;margin-top:5px;line-height:1.35}
+.wk-tile.good{border-color:#14532d;background:linear-gradient(150deg,#0f2417,#0f172a)}
+.wk-tile.good .wt-big{color:#34d399}
+.wk-tile.warn{border-color:#4a3a12;background:linear-gradient(150deg,#231b0d,#0f172a)}
+.wk-tile.warn .wt-big{color:#fbbf24}
+.wk-tile.bad{border-color:#4c1d1d;background:linear-gradient(150deg,#241010,#0f172a)}
+.wk-tile.bad .wt-big{color:#f87171}
 .wk-meta{font-size:13px;color:#64748b;margin-top:16px;text-align:center;font-weight:600}
 .wk-meta b{color:#94a3b8}
 /* ── Trends (homepage) ── */
@@ -568,7 +581,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 60;
+const APP_VERSION = 61;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -947,61 +960,100 @@ const T = {
     let html = `<div class="dial-row">${METRICS.map(dial).join('')}</div>`;
     html += `<div class="dial-cap">Daily average this week · ▲▼ vs last week</div>`;
 
-    // ── One clear focus: the single metric most worth attention this week ──
-    const proj = (m) => daysElapsed > 0 ? m.tw.sum / daysElapsed * 7 : 0;
-    const scored = METRICS.map(m => {
-      let sev = 0, kind = '';
-      if(m.lw.avg > 0 && m.tw.avg < m.lw.avg) { sev = (m.lw.avg - m.tw.avg) / m.lw.avg; kind = 'behind'; }
-      else if(m.goal && m.tw.count > 0 && m.tw.avg < m.goal) { sev = (m.goal - m.tw.avg) / m.goal * 0.7; kind = 'goal'; }
-      return {m, sev, kind};
-    }).sort((a,b) => b.sev - a.sev);
-    const f = scored[0];
+    // ── Meaningful "this week" tiles (replaces the old vague "on track / focus" text) ──
     const dLeft = daysRemaining;
     const dtxt = dLeft > 0 ? `${dLeft} day${dLeft>1?'s':''}` : '';
-
-    let eyebrow, head, sub;
-    if(!f || f.sev < 0.02) {
-      eyebrow = 'On track';
-      head = dLeft > 0 ? 'Strong week — keep it rolling.' : 'Strong week — nicely done.';
-      sub = dLeft > 0 ? `You're up on last week across the board. Hold the pace for the final ${dtxt}.`
-                      : `You finished up on last week across the board. Great consistency.`;
-    } else if(f.m.key === 'exerciseMins') {
-      eyebrow = 'Focus · Exercise';
-      head = 'Exercise is the gap this week.';
-      if(f.kind === 'behind') {
-        const deficit = Math.max(1, Math.round(f.m.lw.sum - f.m.tw.sum));
-        sub = dLeft > 0 ? `You're <b>${deficit} min</b> behind last week — about <b>${Math.ceil(deficit/dLeft)} min a day</b> over the final ${dtxt} beats it.`
-                        : `Finished <b>${deficit} min</b> under last week. Line up a session for Monday.`;
-      } else {
-        const short = Math.max(1, Math.round(f.m.goal - f.m.tw.avg));
-        sub = `Averaging <b>${Math.round(f.m.tw.avg)} min/day</b> — add <b>~${short} min a day</b> to reach your ${f.m.goal}-min target.`;
-      }
-    } else if(f.m.key === 'steps') {
-      eyebrow = 'Focus · Steps';
-      head = 'A daily walk closes the week.';
-      const short = Math.max(100, Math.round((f.kind === 'behind' ? f.m.lw.avg : f.m.goal) - f.m.tw.avg));
-      const km = (short / 1300).toFixed(1);
-      sub = `About <b>${short.toLocaleString()} steps/day</b> short — roughly a <b>${km} km</b> walk each day${dLeft>0?` for the final ${dtxt}`:''}.`;
-    } else {
-      eyebrow = 'Focus · Calories';
-      head = 'Calorie burn is trailing.';
-      if(dLeft > 0) {
-        const gap = Math.max(50, Math.round(f.m.lw.sum - proj(f.m)));
-        sub = `On pace to finish <b>~${gap.toLocaleString()} kcal</b> under last week — a couple of active days over the final ${dtxt} flips it.`;
-      } else {
-        const gap = Math.max(0, Math.round(f.m.lw.sum - f.m.tw.sum));
-        sub = `Finished <b>~${gap.toLocaleString()} kcal</b> under last week.`;
-      }
-    }
-
-    html += `<div class="wk-focus">
-      <div class="wk-focus-eyebrow">${eyebrow}</div>
-      <div class="wk-focus-head">${head}</div>
-      <div class="wk-focus-sub">${sub}</div>
-    </div>
-    <div class="wk-meta">${dLeft > 0 ? `Day ${daysElapsed} of 7 · <b>${dtxt} left</b> to close out the week` : 'Week complete'}</div>`;
+    html += this.renderTiles(health);
+    html += `<div class="wk-meta">${dLeft > 0 ? `Day ${daysElapsed} of 7 · <b>${dtxt} left</b> to close the week` : 'Week complete'}</div>`;
 
     el.innerHTML = html;
+  },
+
+  // Four at-a-glance tiles answering "how am I actually doing this week":
+  // recovery readiness (HRV + resting HR vs baseline), weight (trend, or vs goal
+  // if S.goalWeight is set), training load (this week's lifting volume vs the
+  // 4-week average), and PRs in the last 30 days. Each tile self-heals to a
+  // "log/sync this" prompt when the underlying data is missing.
+  renderTiles(health) {
+    const today = S.today();
+    const tile = (label, big, sub, tone) =>
+      `<div class="wk-tile${tone ? ' ' + tone : ''}">`
+      + `<div class="wt-label">${label}</div>`
+      + `<div class="wt-big">${big}</div>`
+      + `<div class="wt-sub">${sub}</div></div>`;
+    const sortByDate = a => (a || []).slice().sort((x, y) => x.date.localeCompare(y.date));
+    const tiles = [];
+
+    // 1) Recovery readiness — HRV (higher = better) + resting HR (lower = better) vs 7-day baseline
+    const latestOf = k => { const a = sortByDate(health && health[k]); return a.length ? a[a.length-1].value : null; };
+    const avgOf = (k, n = 7) => { const a = sortByDate(health && health[k]).slice(-n); return a.length ? a.reduce((s,r)=>s+r.value,0)/a.length : null; };
+    const hrvL = latestOf('hrv'), hrvA = avgOf('hrv'), rhrL = latestOf('restingHR'), rhrA = avgOf('restingHR');
+    if(hrvL == null && rhrL == null) {
+      tiles.push(tile('Recovery', '—', 'Sync HRV / resting HR', ''));
+    } else {
+      let sc = 0; const bits = [];
+      if(hrvL != null && hrvA) {
+        if(hrvL >= hrvA*1.02) sc++; else if(hrvL < hrvA*0.85) sc--;
+        bits.push(`HRV ${Math.round(hrvL)}${hrvL >= hrvA*1.02 ? ' ▲' : hrvL < hrvA*0.85 ? ' ▼' : ''}`);
+      }
+      if(rhrL != null && rhrA) {
+        if(rhrL <= rhrA*0.98) sc++; else if(rhrL > rhrA*1.05) sc--;
+        bits.push(`RHR ${Math.round(rhrL)}`);
+      }
+      const state = sc >= 1 ? ['Ready', 'good'] : sc <= -1 ? ['Rest', 'bad'] : ['Steady', 'warn'];
+      tiles.push(tile('Recovery', state[0], bits.join(' · ') || '—', state[1]));
+    }
+
+    // 2) Weight — vs goal if S.goalWeight set, else 30-day trend
+    const meas = sortByDate(S.get('measurements', []).map(m => ({date: m.date, value: m.weight})));
+    if(meas.length) {
+      const latest = meas[meas.length-1];
+      const goal = Number(S.get('goalWeight', 0)) || 0;
+      if(goal) {
+        const rem = Math.round((latest.value - goal)*10)/10;
+        const sub = Math.abs(rem) < 0.1 ? 'At goal 🎯' : `${Math.abs(rem)}kg to ${goal}kg`;
+        tiles.push(tile('Weight', `${latest.value}<small> kg</small>`, sub, rem <= 0 ? 'good' : ''));
+      } else {
+        const win = meas.filter(m => daysBetween(m.date, latest.date) <= 30);
+        const base = win.length ? win[0] : meas[0];
+        const d = Math.round((latest.value - base.value)*10)/10;
+        const arrow = d < -0.05 ? '▼' : d > 0.05 ? '▲' : '▬';
+        tiles.push(tile('Weight', `${latest.value}<small> kg</small>`, `${arrow} ${Math.abs(d)}kg / 30d`, ''));
+      }
+    } else {
+      tiles.push(tile('Weight', '—', 'Log a weigh-in', ''));
+    }
+
+    // 3) Training load — this week's lifting volume vs the trailing 4-week average
+    const allW = S.get('workouts', []).filter(w => w.source !== 'watch');
+    const vol = ws => ws.reduce((a,w) => a + (w.exercises||[]).reduce((b,e) => b + (e.sets||[]).reduce((c,s) => c + (s.weight||0)*(s.reps||0), 0), 0), 0);
+    const tws = weekStart(today);
+    const twVol = vol(allW.filter(w => w.date >= tws));
+    let prev = 0;
+    for(let k = 1; k <= 4; k++) { const s = addDays(tws, -7*k), e = addDays(tws, -7*(k-1)); prev += vol(allW.filter(w => w.date >= s && w.date < e)); }
+    const avg4 = prev/4;
+    const fmtVol = v => v >= 1000 ? (v/1000).toFixed(1)+'<small> t</small>' : Math.round(v)+'<small> kg</small>';
+    if(twVol > 0 || avg4 > 0) {
+      let sub = 'vs 4-wk avg', tone = '';
+      if(avg4 > 0) { const pct = Math.round((twVol-avg4)/avg4*100); sub = `${pct>0?'+':''}${pct}% vs 4-wk avg`; tone = pct >= 0 ? 'good' : (pct <= -25 ? 'warn' : ''); }
+      else sub = 'building a baseline';
+      tiles.push(tile('Training load', fmtVol(twVol), sub, tone));
+    } else {
+      tiles.push(tile('Training load', '—', 'Log a lifting session', ''));
+    }
+
+    // 4) PRs in the last 30 days
+    const exercises = S.get('exercises', []);
+    const prs = exercises.filter(e => e.pr && e.pr.date && daysBetween(e.pr.date, today) <= 30)
+                         .sort((a,b) => b.pr.date.localeCompare(a.pr.date));
+    if(prs.length) {
+      const top = prs[0];
+      tiles.push(tile('PRs · 30d', `🏆 ${prs.length}`, `${top.name} ${top.pr.weight}kg×${top.pr.reps}`, 'good'));
+    } else {
+      tiles.push(tile('PRs · 30d', '0', 'No PRs in 30d — time to push', 'warn'));
+    }
+
+    return `<div class="wk-tiles">${tiles.join('')}</div>`;
   },
 
   renderHealthDashboard(date) {
