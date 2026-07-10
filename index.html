@@ -581,7 +581,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 61;
+const APP_VERSION = 62;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -864,10 +864,12 @@ const T = {
   },
 
   render() {
-    // Homepage is a clean weekly view: dials (activity) + trends (training).
-    // Day-level logging lives in the Food / Workout / Sync tabs.
+    // Homepage is a clean weekly view: dials + meaningful tiles (recovery, weight,
+    // sleep, active days). Dean logs lifts in a separate app, so the old lift-based
+    // "Trends" card (volume/PRs/sessions) is hidden.
     this.renderWeekly();
-    this.renderInsights();
+    const tc = document.getElementById('trends-card');
+    if(tc) tc.style.display = 'none';
   },
 
   // Aggregate a health metric over [start, endExclusive). mode 'sum' adds same-day
@@ -976,8 +978,8 @@ const T = {
   // "log/sync this" prompt when the underlying data is missing.
   renderTiles(health) {
     const today = S.today();
-    const tile = (label, big, sub, tone) =>
-      `<div class="wk-tile${tone ? ' ' + tone : ''}">`
+    const tile = (label, big, sub, tone, onclick) =>
+      `<div class="wk-tile${tone ? ' ' + tone : ''}"${onclick ? ` onclick="${onclick}" style="cursor:pointer"` : ''}>`
       + `<div class="wt-label">${label}</div>`
       + `<div class="wt-big">${big}</div>`
       + `<div class="wt-sub">${sub}</div></div>`;
@@ -1004,56 +1006,68 @@ const T = {
       tiles.push(tile('Recovery', state[0], bits.join(' · ') || '—', state[1]));
     }
 
-    // 2) Weight — vs goal if S.goalWeight set, else 30-day trend
+    // 2) Weight — progress toward goal (default 100kg; tap the tile to change)
     const meas = sortByDate(S.get('measurements', []).map(m => ({date: m.date, value: m.weight})));
+    const goal = Number(S.get('goalWeight', 100)) || 100;
     if(meas.length) {
       const latest = meas[meas.length-1];
-      const goal = Number(S.get('goalWeight', 0)) || 0;
-      if(goal) {
-        const rem = Math.round((latest.value - goal)*10)/10;
-        const sub = Math.abs(rem) < 0.1 ? 'At goal 🎯' : `${Math.abs(rem)}kg to ${goal}kg`;
-        tiles.push(tile('Weight', `${latest.value}<small> kg</small>`, sub, rem <= 0 ? 'good' : ''));
-      } else {
-        const win = meas.filter(m => daysBetween(m.date, latest.date) <= 30);
-        const base = win.length ? win[0] : meas[0];
-        const d = Math.round((latest.value - base.value)*10)/10;
-        const arrow = d < -0.05 ? '▼' : d > 0.05 ? '▲' : '▬';
-        tiles.push(tile('Weight', `${latest.value}<small> kg</small>`, `${arrow} ${Math.abs(d)}kg / 30d`, ''));
+      const rem = Math.round((latest.value - goal)*10)/10;      // + above goal, − below goal
+      const win = meas.filter(m => daysBetween(m.date, latest.date) <= 30);
+      const base = win.length ? win[0] : meas[0];
+      const trend = Math.round((latest.value - base.value)*10)/10;   // 30-day movement
+      let sub, tone = '';
+      if(Math.abs(rem) < 0.3) { sub = `At goal 🎯 (${goal}kg)`; tone = 'good'; }
+      else {
+        const need = rem > 0 ? '▼' : '▲';                      // direction still needed
+        const toward = (rem > 0 && trend < 0) || (rem < 0 && trend > 0);  // moving the right way?
+        sub = `${need} ${Math.abs(rem)}kg to ${goal}kg`;
+        tone = toward && Math.abs(trend) >= 0.1 ? 'good' : '';
       }
+      tiles.push(tile('Weight', `${latest.value}<small> kg</small>`, sub, tone, 'T.setGoalWeight()'));
     } else {
-      tiles.push(tile('Weight', '—', 'Log a weigh-in', ''));
+      tiles.push(tile('Weight', `${goal}<small> kg goal</small>`, 'Sync a weigh-in from Health', '', 'T.setGoalWeight()'));
     }
 
-    // 3) Training load — this week's lifting volume vs the trailing 4-week average
-    const allW = S.get('workouts', []).filter(w => w.source !== 'watch');
-    const vol = ws => ws.reduce((a,w) => a + (w.exercises||[]).reduce((b,e) => b + (e.sets||[]).reduce((c,s) => c + (s.weight||0)*(s.reps||0), 0), 0), 0);
-    const tws = weekStart(today);
-    const twVol = vol(allW.filter(w => w.date >= tws));
-    let prev = 0;
-    for(let k = 1; k <= 4; k++) { const s = addDays(tws, -7*k), e = addDays(tws, -7*(k-1)); prev += vol(allW.filter(w => w.date >= s && w.date < e)); }
-    const avg4 = prev/4;
-    const fmtVol = v => v >= 1000 ? (v/1000).toFixed(1)+'<small> t</small>' : Math.round(v)+'<small> kg</small>';
-    if(twVol > 0 || avg4 > 0) {
-      let sub = 'vs 4-wk avg', tone = '';
-      if(avg4 > 0) { const pct = Math.round((twVol-avg4)/avg4*100); sub = `${pct>0?'+':''}${pct}% vs 4-wk avg`; tone = pct >= 0 ? 'good' : (pct <= -25 ? 'warn' : ''); }
-      else sub = 'building a baseline';
-      tiles.push(tile('Training load', fmtVol(twVol), sub, tone));
+    // Week windows (shared by the next two tiles)
+    const tws = weekStart(today), lws = addDays(tws, -7), nextMon = addDays(tws, 7);
+    const wkAvg = (key, startD, endExcl) => {
+      const per = {};
+      sortByDate(health && health[key]).forEach(r => { if(r.date >= startD && r.date < endExcl) per[r.date] = r.value; });
+      const v = Object.values(per);
+      return v.length ? v.reduce((a,b) => a+b, 0)/v.length : null;
+    };
+
+    // 3) Sleep — this week's average vs last week (Apple Watch, hours)
+    const slpT = wkAvg('sleep', tws, nextMon), slpL = wkAvg('sleep', lws, tws);
+    if(slpT != null) {
+      let sub = 'avg this week', tone = slpT >= 7 ? 'good' : slpT < 6 ? 'warn' : '';
+      if(slpL != null) { const d = Math.round((slpT - slpL)*10)/10; sub = `${d>0?'▲ +':d<0?'▼ ':'▬ '}${Math.abs(d)}h vs last wk`; }
+      tiles.push(tile('Sleep', `${slpT.toFixed(1)}<small> h/night</small>`, sub, tone));
     } else {
-      tiles.push(tile('Training load', '—', 'Log a lifting session', ''));
+      tiles.push(tile('Sleep', '—', 'Sync sleep from Health', ''));
     }
 
-    // 4) PRs in the last 30 days
-    const exercises = S.get('exercises', []);
-    const prs = exercises.filter(e => e.pr && e.pr.date && daysBetween(e.pr.date, today) <= 30)
-                         .sort((a,b) => b.pr.date.localeCompare(a.pr.date));
-    if(prs.length) {
-      const top = prs[0];
-      tiles.push(tile('PRs · 30d', `🏆 ${prs.length}`, `${top.name} ${top.pr.weight}kg×${top.pr.reps}`, 'good'));
+    // 4) Active days — days with a Watch workout this week (exercise minutes; PT sessions count)
+    if(health && health.exerciseMins && health.exerciseMins.length) {
+      const exDays = new Set();
+      sortByDate(health.exerciseMins).forEach(r => { if(r.date >= tws && r.date < nextMon && r.value > 0) exDays.add(r.date); });
+      const n = exDays.size;
+      const tone = n >= 4 ? 'good' : n <= 1 ? 'warn' : '';
+      tiles.push(tile('Active days', `${n}<small> / 7</small>`, n >= 4 ? 'strong week' : 'days with a workout', tone));
     } else {
-      tiles.push(tile('PRs · 30d', '0', 'No PRs in 30d — time to push', 'warn'));
+      tiles.push(tile('Active days', '—', 'Sync exercise from Health', ''));
     }
 
     return `<div class="wk-tiles">${tiles.join('')}</div>`;
+  },
+
+  // Tap the Weight tile to set/change the goal weight (default 100kg).
+  setGoalWeight() {
+    const cur = S.get('goalWeight', 100);
+    const v = prompt('Goal weight (kg):', cur);
+    if(v === null) return;
+    const n = parseFloat(v);
+    if(!isNaN(n) && n > 0) { S.set('goalWeight', Math.round(n*10)/10); this.renderWeekly(); }
   },
 
   renderHealthDashboard(date) {
