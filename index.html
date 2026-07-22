@@ -581,7 +581,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 62;
+const APP_VERSION = 64;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -971,13 +971,28 @@ const T = {
     el.innerHTML = html;
   },
 
-  // Four at-a-glance tiles answering "how am I actually doing this week":
-  // recovery readiness (HRV + resting HR vs baseline), weight (trend, or vs goal
-  // if S.goalWeight is set), training load (this week's lifting volume vs the
-  // 4-week average), and PRs in the last 30 days. Each tile self-heals to a
-  // "log/sync this" prompt when the underlying data is missing.
+  // Current-month vs last-month calendar windows. Returns ISO date strings:
+  // ms = 1st of this month, me = 1st of next month (exclusive), pms = 1st of last
+  // month, pme = ms. Used by the monthly-progress tiles below.
+  monthWindows() {
+    const t = S.today();                                    // YYYY-MM-DD
+    const y = +t.slice(0,4), m = +t.slice(5,7);
+    const iso = (yy, mm) => `${yy}-${String(mm).padStart(2,'0')}-01`;
+    const ms = iso(y, m);
+    const me = m === 12 ? iso(y+1, 1) : iso(y, m+1);
+    const pms = m === 1 ? iso(y-1, 12) : iso(y, m-1);
+    return {ms, me, pms, pme: ms};
+  },
+
+  // Four MONTHLY-PROGRESS tiles under the weekly dials. Deliberately NOT real-time:
+  // each shows the CURRENT MONTH's daily average against LAST MONTH so the homepage
+  // nudges Dean toward improvement (green ▲ = trending up). Daily averages (not totals)
+  // so the comparison is fair even early in the month. They read only reliable Apple
+  // Health scalar fields — steps, active energy, exercise minutes, weight — and NEVER
+  // watch workout type/minutes, which the iOS Shortcut can't supply dependably. Each
+  // tile self-heals to a "sync" prompt when the underlying data is missing.
   renderTiles(health) {
-    const today = S.today();
+    const {ms, me, pms, pme} = this.monthWindows();
     const tile = (label, big, sub, tone, onclick) =>
       `<div class="wk-tile${tone ? ' ' + tone : ''}"${onclick ? ` onclick="${onclick}" style="cursor:pointer"` : ''}>`
       + `<div class="wt-label">${label}</div>`
@@ -986,27 +1001,47 @@ const T = {
     const sortByDate = a => (a || []).slice().sort((x, y) => x.date.localeCompare(y.date));
     const tiles = [];
 
-    // 1) Recovery readiness — HRV (higher = better) + resting HR (lower = better) vs 7-day baseline
-    const latestOf = k => { const a = sortByDate(health && health[k]); return a.length ? a[a.length-1].value : null; };
-    const avgOf = (k, n = 7) => { const a = sortByDate(health && health[k]).slice(-n); return a.length ? a.reduce((s,r)=>s+r.value,0)/a.length : null; };
-    const hrvL = latestOf('hrv'), hrvA = avgOf('hrv'), rhrL = latestOf('restingHR'), rhrA = avgOf('restingHR');
-    if(hrvL == null && rhrL == null) {
-      tiles.push(tile('Recovery', '—', 'Sync HRV / resting HR', ''));
-    } else {
-      let sc = 0; const bits = [];
-      if(hrvL != null && hrvA) {
-        if(hrvL >= hrvA*1.02) sc++; else if(hrvL < hrvA*0.85) sc--;
-        bits.push(`HRV ${Math.round(hrvL)}${hrvL >= hrvA*1.02 ? ' ▲' : hrvL < hrvA*0.85 ? ' ▼' : ''}`);
-      }
-      if(rhrL != null && rhrA) {
-        if(rhrL <= rhrA*0.98) sc++; else if(rhrL > rhrA*1.05) sc--;
-        bits.push(`RHR ${Math.round(rhrL)}`);
-      }
-      const state = sc >= 1 ? ['Ready', 'good'] : sc <= -1 ? ['Rest', 'bad'] : ['Steady', 'warn'];
-      tiles.push(tile('Recovery', state[0], bits.join(' · ') || '—', state[1]));
+    // Month-over-month daily-average trend for a health field (or fields).
+    const monTrend = (fields, mode, factor) => {
+      const cur  = this.weeklyMetric(health, fields, ms, me, mode, factor);
+      const prev = this.weeklyMetric(health, fields, pms, pme, mode, factor);
+      let pct = null;
+      if(prev.avg > 0 && cur.avg > 0) pct = Math.round((cur.avg - prev.avg) / prev.avg * 100);
+      return {cur, prev, pct};
+    };
+    // "Up is good" tone + encouraging sub-line for a monthly trend.
+    const toneUp = t => t.pct !== null && t.pct > 1 ? 'good' : (t.pct !== null && t.pct < -1 ? 'warn' : '');
+    const subUp = t => t.pct === null
+      ? '▲ first month tracked'
+      : `${t.pct > 1 ? '▲' : t.pct < -1 ? '▼' : '▬'} ${t.pct > 0 ? '+' : ''}${t.pct}% vs last month`;
+
+    // 1) Steps — this month's daily average vs last month
+    {
+      const t = monTrend(['steps'], 'max');
+      if(t.cur.count) {
+        const a = Math.round(t.cur.avg);
+        const big = a >= 10000 ? (a/1000).toFixed(1) + 'k' : a.toLocaleString();
+        tiles.push(tile('Steps', `${big}<small> /day</small>`, subUp(t), toneUp(t)));
+      } else tiles.push(tile('Steps', '—', 'Sync steps from Health', ''));
     }
 
-    // 2) Weight — progress toward goal (default 100kg; tap the tile to change)
+    // 2) Active energy — activeCal (kJ→kcal), daily average vs last month
+    {
+      const t = monTrend(['activeCal'], 'sum', KJ_TO_KCAL);
+      if(t.cur.count) {
+        tiles.push(tile('Active energy', `${Math.round(t.cur.avg).toLocaleString()}<small> kcal/d</small>`, subUp(t), toneUp(t)));
+      } else tiles.push(tile('Active energy', '—', 'Sync energy from Health', ''));
+    }
+
+    // 3) Exercise — exercise minutes, daily average vs last month
+    {
+      const t = monTrend(['exerciseMins'], 'sum');
+      if(t.cur.count) {
+        tiles.push(tile('Exercise', `${Math.round(t.cur.avg)}<small> min/d</small>`, subUp(t), toneUp(t)));
+      } else tiles.push(tile('Exercise', '—', 'Sync exercise from Health', ''));
+    }
+
+    // 4) Weight — progress toward goal (default 100kg; tap the tile to change)
     const meas = sortByDate(S.get('measurements', []).map(m => ({date: m.date, value: m.weight})));
     const goal = Number(S.get('goalWeight', 100)) || 100;
     if(meas.length) {
@@ -1028,37 +1063,8 @@ const T = {
       tiles.push(tile('Weight', `${goal}<small> kg goal</small>`, 'Sync a weigh-in from Health', '', 'T.setGoalWeight()'));
     }
 
-    // Week windows (shared by the next two tiles)
-    const tws = weekStart(today), lws = addDays(tws, -7), nextMon = addDays(tws, 7);
-    const wkAvg = (key, startD, endExcl) => {
-      const per = {};
-      sortByDate(health && health[key]).forEach(r => { if(r.date >= startD && r.date < endExcl) per[r.date] = r.value; });
-      const v = Object.values(per);
-      return v.length ? v.reduce((a,b) => a+b, 0)/v.length : null;
-    };
-
-    // 3) Sleep — this week's average vs last week (Apple Watch, hours)
-    const slpT = wkAvg('sleep', tws, nextMon), slpL = wkAvg('sleep', lws, tws);
-    if(slpT != null) {
-      let sub = 'avg this week', tone = slpT >= 7 ? 'good' : slpT < 6 ? 'warn' : '';
-      if(slpL != null) { const d = Math.round((slpT - slpL)*10)/10; sub = `${d>0?'▲ +':d<0?'▼ ':'▬ '}${Math.abs(d)}h vs last wk`; }
-      tiles.push(tile('Sleep', `${slpT.toFixed(1)}<small> h/night</small>`, sub, tone));
-    } else {
-      tiles.push(tile('Sleep', '—', 'Sync sleep from Health', ''));
-    }
-
-    // 4) Active days — days with a Watch workout this week (exercise minutes; PT sessions count)
-    if(health && health.exerciseMins && health.exerciseMins.length) {
-      const exDays = new Set();
-      sortByDate(health.exerciseMins).forEach(r => { if(r.date >= tws && r.date < nextMon && r.value > 0) exDays.add(r.date); });
-      const n = exDays.size;
-      const tone = n >= 4 ? 'good' : n <= 1 ? 'warn' : '';
-      tiles.push(tile('Active days', `${n}<small> / 7</small>`, n >= 4 ? 'strong week' : 'days with a workout', tone));
-    } else {
-      tiles.push(tile('Active days', '—', 'Sync exercise from Health', ''));
-    }
-
-    return `<div class="wk-tiles">${tiles.join('')}</div>`;
+    const cap = `<div class="dial-cap" style="margin-top:2px">This month vs last · keep it trending up 📈</div>`;
+    return cap + `<div class="wk-tiles">${tiles.join('')}</div>`;
   },
 
   // Tap the Weight tile to set/change the goal weight (default 100kg).
@@ -2741,24 +2747,35 @@ const I = {
     let rawActs = data.workouts || data.activities || data.watchWorkouts;
     if(typeof rawActs === 'string') { try { rawActs = JSON.parse(rawActs); } catch { rawActs = null; } }
     if(Array.isArray(rawActs)) {
-      const workouts = S.get('workouts', []).filter(w => !(w.source === 'watch' && w.date === importDate));
-      rawActs.forEach((a, i) => {
+      // Normalise each row first, resolving each workout's OWN date (a bulk sync can
+      // carry many days of workouts in one array). Falls back to the object's date.
+      const incoming = [];
+      rawActs.forEach((a) => {
         if(!a || typeof a !== 'object') return;
         const rawType = a.type ?? a.activityType ?? a.workoutType ?? a.name ?? a.activity ?? '';
         let mins = parseFloat(a.minutes ?? a.duration ?? a.mins ?? a.time ?? 0) || 0;
         if(mins > 600) mins = Math.round(mins / 60);   // looks like seconds → minutes
         const cal = Math.round(parseFloat(a.calories ?? a.activeCal ?? a.energy ?? a.cal ?? 0) || 0);
         const dist = Math.round((parseFloat(a.distance ?? a.km ?? a.dist ?? 0) || 0) * 100) / 100;
-        const norm = normalizeActivity(rawType);
         if(!rawType && !mins && !cal) return;   // empty row
-        workouts.push({
-          id: `watch_${importDate}_${i}`, date: importDate, source: 'watch',
-          type: norm.label, emoji: norm.emoji, rawType: String(rawType || ''),
-          minutes: Math.round(mins), calories: cal, distance: dist, exercises: [],
-        });
-        watchN++;
+        let wd = String(a.date ?? a.startDate ?? a.day ?? importDate).slice(0,10);
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(wd)) wd = importDate;
+        incoming.push({ wd, rawType, mins, cal, dist, norm: normalizeActivity(rawType) });
       });
-      S.set('workouts', workouts);
+      if(incoming.length) {
+        // Clear existing watch workouts for every date we're re-importing (idempotent re-sync)
+        const dates = new Set(incoming.map(r => r.wd));
+        const workouts = S.get('workouts', []).filter(w => !(w.source === 'watch' && dates.has(w.date)));
+        incoming.forEach((r, i) => {
+          workouts.push({
+            id: `watch_${r.wd}_${i}`, date: r.wd, source: 'watch',
+            type: r.norm.label, emoji: r.norm.emoji, rawType: String(r.rawType || ''),
+            minutes: Math.round(r.mins), calories: r.cal, distance: r.dist, exercises: [],
+          });
+          watchN++;
+        });
+        S.set('workouts', workouts);
+      }
     }
 
     // Sync log
