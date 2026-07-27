@@ -240,7 +240,33 @@ textarea{resize:vertical;min-height:80px}
 .prog-stat.pos .ps-val{color:#34d399}
 .prog-stat.neg .ps-val{color:#f87171}
 .prog-stat .ps-lbl{font-size:11px;color:#64748b;font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
-.prog-cap{font-size:12.5px;color:#94a3b8;font-weight:600;margin-top:12px;text-align:center}
+.prog-cap{font-size:12.5px;color:#94a3b8;font-weight:600;margin-top:14px;text-align:center}
+/* composition bars (lean vs fat, shared kg scale) */
+.comp-wrap{margin-top:12px}
+.comp-row{display:flex;align-items:center;gap:10px;margin-top:10px}
+.comp-dt{width:46px;font-size:12px;color:#94a3b8;font-weight:700;flex-shrink:0}
+.comp-track{flex:1;height:32px;background:#0b1220;border-radius:9px;display:flex;gap:2px;overflow:hidden}
+.comp-seg{height:100%;display:flex;align-items:center;padding-left:9px;font-size:12px;font-weight:800;
+  color:#04120b;white-space:nowrap;overflow:hidden}
+.comp-seg small{font-weight:700;opacity:.75;font-size:10px;margin-left:2px}
+.comp-seg.lean{background:#34d399}
+.comp-seg.fat{background:#f59e0b}
+.comp-legend{display:flex;gap:16px;margin-top:12px;padding-left:56px}
+.comp-legend span{font-size:12px;color:#94a3b8;font-weight:600;display:flex;align-items:center;gap:6px}
+.comp-legend .ld{width:10px;height:10px;border-radius:3px;display:inline-block}
+.comp-legend .ld.lean{background:#34d399}
+.comp-legend .ld.fat{background:#f59e0b}
+/* ranked change bars (biggest improvement first) */
+.chg-wrap{margin-top:16px;border-top:1px solid #14532d;padding-top:8px}
+.chg-row{margin-top:12px}
+.chg-top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:6px}
+.chg-nm{color:#94a3b8}
+.chg-dl{font-weight:800}
+.chg-dl.pos{color:#34d399}
+.chg-dl.neg{color:#f87171}
+.chg-bar{height:10px;background:#0b1220;border-radius:5px;overflow:hidden}
+.chg-bar i{display:block;height:100%;background:#34d399;border-radius:5px}
+.chg-bar i.neg{background:#f87171}
 /* ── Trends (homepage) ── */
 #trends-card .trends-h{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;font-weight:800;display:flex;align-items:center;gap:9px}
 .trends-scope{font-size:11px;letter-spacing:.4px;text-transform:none;color:#60a5fa;background:rgba(96,165,250,.12);padding:3px 10px;border-radius:999px;font-weight:700}
@@ -616,7 +642,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 65;
+const APP_VERSION = 66;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -1027,53 +1053,68 @@ const T = {
   },
 
   // Body-composition progress since the FIRST tracked body-fat reading — the
-  // homepage's motivational "overall gains" hero. Frames it as recomposition
-  // (muscle up, fat down) rather than scale weight. Silent until ≥2 readings.
+  // homepage's motivational "overall gains" hero. Two parts: (1) stacked
+  // composition bars (part-to-whole: lean vs fat, shared kg scale, so the fat
+  // block visibly shrinks and muscle grows) and (2) ranked change bars (biggest
+  // improvement first). Frames it as recomposition, not scale weight. Silent
+  // until ≥2 readings with body-fat data.
   renderProgress() {
     const all = S.get('measurements', [])
       .filter(m => m.bodyFat != null)
       .sort((a,b) => a.date.localeCompare(b.date));
     if(all.length < 2) return '';
     const first = all[0], last = all[all.length-1];
-
     const round1 = n => Math.round(n*10)/10;
-    const dFat   = round1(last.bodyFat - first.bodyFat);                  // pts (want −)
-    const l0 = leanMassOf(first), l1 = leanMassOf(last);
-    const dLean  = (l0 != null && l1 != null) ? round1(l1 - l0) : null;   // kg (want +)
     const fatMass = m => (m.weight != null && m.bodyFat != null) ? m.weight * m.bodyFat/100 : null;
-    const f0 = fatMass(first), f1 = fatMass(last);
-    const dFatKg = (f0 != null && f1 != null) ? round1(f1 - f0) : null;   // kg (want −)
-    const s0 = caliperSum(first), s1 = caliperSum(last);
-    const dSkin  = (s0 != null && s1 != null) ? round1(s1 - s0) : null;   // mm (want −)
-    const dWaist = (first.waist != null && last.waist != null) ? round1(last.waist - first.waist) : null;
-    const days   = daysBetween(first.date, last.date);
 
-    // Hero: the two headline wins (lean muscle up, body fat down).
-    const hero = [];
-    if(dLean != null) hero.push(
-      `<div class="prog-hero-stat"><div class="phs-big">${dLean>0?'+':''}${dLean}<small>kg</small></div>`
-      + `<div class="phs-lbl">Lean muscle</div></div>`);
-    hero.push(
-      `<div class="prog-hero-stat"><div class="phs-big">${dFat>0?'+':''}${dFat}<small>pts</small></div>`
-      + `<div class="phs-lbl">Body fat · now ${last.bodyFat}%</div></div>`);
-
-    // Supporting stats row (each coloured green when it moved the healthy way).
-    const stat = (label, val, good, unit) => {
-      if(val == null) return '';
-      const arrow = val > 0 ? '▲' : val < 0 ? '▼' : '▬';
-      return `<div class="prog-stat ${good ? 'pos' : 'neg'}"><div class="ps-val">${arrow} ${val>0?'+':''}${val}${unit}</div>`
-        + `<div class="ps-lbl">${label}</div></div>`;
+    // ── Part 1: composition bars (lean + fat, shared kg scale) ──
+    const comp = (m) => {
+      const lean = leanMassOf(m), fat = fatMass(m);
+      return (lean != null && fat != null) ? {date:m.date, lean, fat, total: lean+fat} : null;
     };
-    const row = [
-      stat('Fat mass', dFatKg, dFatKg != null && dFatKg < 0, 'kg'),
-      stat('Waist', dWaist, dWaist != null && dWaist < 0, 'cm'),
-      stat('Skinfolds', dSkin, dSkin != null && dSkin < 0, 'mm')
-    ].filter(Boolean).join('');
+    const c0 = comp(first), c1 = comp(last);
+    let bars = '';
+    if(c0 && c1) {
+      const scale = Math.max(c0.total, c1.total) * 1.02;   // shared scale + headroom
+      const bar = (c) => `<div class="comp-row"><div class="comp-dt">${fmtDate(c.date).replace(/^\w+,\s*/,'')}</div>`
+        + `<div class="comp-track">`
+        + `<div class="comp-seg lean" style="width:${(c.lean/scale*100).toFixed(1)}%">${round1(c.lean)}<small>kg lean</small></div>`
+        + `<div class="comp-seg fat" style="width:${(c.fat/scale*100).toFixed(1)}%">${round1(c.fat)}</div>`
+        + `</div></div>`;
+      bars = `<div class="comp-wrap">${bar(c0)}${bar(c1)}</div>`
+        + `<div class="comp-legend"><span><i class="ld lean"></i>Lean muscle</span><span><i class="ld fat"></i>Fat mass</span></div>`;
+    }
 
+    // ── Part 2: ranked change bars (biggest improvement first) ──
+    const l0 = leanMassOf(first), l1 = leanMassOf(last);
+    const f0 = fatMass(first), f1 = fatMass(last);
+    const s0 = caliperSum(first), s1 = caliperSum(last);
+    const metrics = [];
+    const add = (name, a, b, unit, goodDown) => {
+      if(a == null || b == null || a === 0) return;
+      const d = round1(b - a), pct = (b - a) / a * 100;
+      metrics.push({name, d, pct, unit, good: goodDown ? d < 0 : d > 0, mag: Math.abs(pct)});
+    };
+    add('Skinfolds', s0, s1, 'mm', true);
+    add('Body fat', first.bodyFat, last.bodyFat, 'pts', true);
+    add('Fat mass', f0, f1, 'kg', true);
+    add('Lean mass', l0, l1, 'kg', false);
+    add('Waist', first.waist, last.waist, 'cm', true);
+    metrics.sort((x,y) => y.mag - x.mag);
+    const maxMag = metrics.length ? metrics[0].mag : 1;
+    const chgRows = metrics.map(m => {
+      const arrow = m.d > 0 ? '▲' : m.d < 0 ? '▼' : '▬';
+      const w = Math.max(6, Math.round(m.mag / maxMag * 100));
+      return `<div class="chg-row"><div class="chg-top"><span class="chg-nm">${m.name}</span>`
+        + `<span class="chg-dl ${m.good ? 'pos' : 'neg'}">${arrow} ${Math.abs(m.d)}${m.unit} · ${m.pct>0?'+':''}${Math.round(m.pct)}%</span></div>`
+        + `<div class="chg-bar"><i class="${m.good ? '' : 'neg'}" style="width:${w}%"></i></div></div>`;
+    }).join('');
+
+    const days = daysBetween(first.date, last.date);
     return `<div class="prog-card">
       <div class="prog-head">Your progress <span>since ${fmtDate(first.date)} · ${days} days</span></div>
-      <div class="prog-hero">${hero.join('')}</div>
-      ${row ? `<div class="prog-row">${row}</div>` : ''}
+      ${bars}
+      ${chgRows ? `<div class="chg-wrap">${chgRows}</div>` : ''}
       <div class="prog-cap">💪 Muscle up, fat down — that's real recomposition. Keep going.</div>
     </div>`;
   },
