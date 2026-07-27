@@ -223,6 +223,24 @@ textarea{resize:vertical;min-height:80px}
 .wk-tile.bad .wt-big{color:#f87171}
 .wk-meta{font-size:13px;color:#64748b;margin-top:16px;text-align:center;font-weight:600}
 .wk-meta b{color:#94a3b8}
+
+/* ── Body-composition progress hero (homepage "overall gains") ── */
+.prog-card{background:linear-gradient(150deg,#0f2417,#0f172a);border:1px solid #14532d;border-radius:18px;
+  padding:16px 16px 14px;margin-top:16px;box-shadow:0 0 20px rgba(16,185,129,.06)}
+.prog-head{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;font-weight:800}
+.prog-head span{color:#475569;letter-spacing:.3px;text-transform:none;font-weight:600}
+.prog-hero{display:flex;gap:12px;margin-top:12px}
+.prog-hero-stat{flex:1;min-width:0}
+.phs-big{font-size:32px;font-weight:800;color:#34d399;line-height:1;white-space:nowrap}
+.phs-big small{font-size:15px;font-weight:700;color:#6ee7b7;margin-left:2px}
+.phs-lbl{font-size:12px;color:#94a3b8;font-weight:600;margin-top:6px}
+.prog-row{display:flex;gap:8px;margin-top:14px}
+.prog-stat{flex:1;background:#0b1220;border:1px solid #1e293b;border-radius:12px;padding:9px 8px;text-align:center;min-width:0}
+.prog-stat .ps-val{font-size:15px;font-weight:800;color:#cbd5e1;white-space:nowrap}
+.prog-stat.pos .ps-val{color:#34d399}
+.prog-stat.neg .ps-val{color:#f87171}
+.prog-stat .ps-lbl{font-size:11px;color:#64748b;font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:.5px}
+.prog-cap{font-size:12.5px;color:#94a3b8;font-weight:600;margin-top:12px;text-align:center}
 /* ── Trends (homepage) ── */
 #trends-card .trends-h{font-size:13px;letter-spacing:2px;text-transform:uppercase;color:#94a3b8;font-weight:800;display:flex;align-items:center;gap:9px}
 .trends-scope{font-size:11px;letter-spacing:.4px;text-transform:none;color:#60a5fa;background:rgba(96,165,250,.12);padding:3px 10px;border-radius:999px;font-weight:700}
@@ -445,6 +463,23 @@ textarea{resize:vertical;min-height:80px}
   </div>
 
   <div class="card">
+    <h3>Body Fat %</h3>
+    <div class="chart-container"><canvas id="bodyfat-chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h3>Lean Mass (kg)</h3>
+    <div class="chart-container"><canvas id="leanmass-chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h3>Total Skinfolds (mm)</h3>
+    <p class="muted small" style="margin:-4px 0 6px">Sum of all PT calliper sites — lower is leaner.</p>
+    <div class="chart-container"><canvas id="skinfold-chart"></canvas></div>
+    <div id="measure-tap-info" class="muted small" style="text-align:center;margin-top:4px"></div>
+  </div>
+
+  <div class="card">
     <h3>History</h3>
     <div id="measurement-history"></div>
   </div>
@@ -581,7 +616,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 64;
+const APP_VERSION = 65;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -724,6 +759,19 @@ function addDays(d, n) {
 }
 function daysBetween(a, b) {
   return Math.round((new Date(b+'T12:00:00') - new Date(a+'T12:00:00')) / 86400000);
+}
+// Sum of PT skinfold calliper sites (mm) for a measurement, or null if none.
+function caliperSum(m) {
+  if(!m || !m.calipers) return null;
+  const v = Object.values(m.calipers).filter(x => typeof x === 'number' && !isNaN(x));
+  return v.length ? v.reduce((a,b) => a+b, 0) : null;
+}
+// Lean mass (kg): stored value if present, else derived from weight × (1 − bf%).
+function leanMassOf(m) {
+  if(!m) return null;
+  if(m.leanMass != null) return m.leanMass;
+  if(m.weight != null && m.bodyFat != null) return +(m.weight * (1 - m.bodyFat/100)).toFixed(2);
+  return null;
 }
 function weekStart(d) {
   const dt = new Date(d+'T12:00:00');
@@ -912,8 +960,12 @@ const T = {
     const daysRemaining = Math.max(0, 7 - daysElapsed);
     if(rangeEl) rangeEl.textContent = `${fmtDate(tws)} – ${fmtDate(addDays(tws,6))}`;
 
+    // Body-comp progress hero shows whenever ≥2 readings exist — independent of
+    // Apple Health sync, so it survives the "no health data" early-returns below.
+    const progressHTML = this.renderProgress();
+
     if(!health || !health.lastImport) {
-      el.innerHTML = '<div class="muted" style="text-align:center;padding:12px">Sync health data to see your weekly trends.</div>';
+      el.innerHTML = progressHTML + '<div class="muted" style="text-align:center;padding:12px">Sync health data to see your weekly trends.</div>';
       return;
     }
 
@@ -929,7 +981,7 @@ const T = {
     });
 
     if(METRICS.every(m => m.tw.count === 0 && m.lw.count === 0)) {
-      el.innerHTML = '<div class="muted" style="text-align:center;padding:12px">No Energy / Exercise / Steps data yet for this week or last. Sync from Apple Health.</div>';
+      el.innerHTML = progressHTML + '<div class="muted" style="text-align:center;padding:12px">No Energy / Exercise / Steps data yet for this week or last. Sync from Apple Health.</div>';
       return;
     }
 
@@ -962,6 +1014,9 @@ const T = {
     let html = `<div class="dial-row">${METRICS.map(dial).join('')}</div>`;
     html += `<div class="dial-cap">Daily average this week · ▲▼ vs last week</div>`;
 
+    // ── Body-composition progress hero (the "overall gains" reflection) ──
+    html += progressHTML;
+
     // ── Meaningful "this week" tiles (replaces the old vague "on track / focus" text) ──
     const dLeft = daysRemaining;
     const dtxt = dLeft > 0 ? `${dLeft} day${dLeft>1?'s':''}` : '';
@@ -969,6 +1024,58 @@ const T = {
     html += `<div class="wk-meta">${dLeft > 0 ? `Day ${daysElapsed} of 7 · <b>${dtxt} left</b> to close the week` : 'Week complete'}</div>`;
 
     el.innerHTML = html;
+  },
+
+  // Body-composition progress since the FIRST tracked body-fat reading — the
+  // homepage's motivational "overall gains" hero. Frames it as recomposition
+  // (muscle up, fat down) rather than scale weight. Silent until ≥2 readings.
+  renderProgress() {
+    const all = S.get('measurements', [])
+      .filter(m => m.bodyFat != null)
+      .sort((a,b) => a.date.localeCompare(b.date));
+    if(all.length < 2) return '';
+    const first = all[0], last = all[all.length-1];
+
+    const round1 = n => Math.round(n*10)/10;
+    const dFat   = round1(last.bodyFat - first.bodyFat);                  // pts (want −)
+    const l0 = leanMassOf(first), l1 = leanMassOf(last);
+    const dLean  = (l0 != null && l1 != null) ? round1(l1 - l0) : null;   // kg (want +)
+    const fatMass = m => (m.weight != null && m.bodyFat != null) ? m.weight * m.bodyFat/100 : null;
+    const f0 = fatMass(first), f1 = fatMass(last);
+    const dFatKg = (f0 != null && f1 != null) ? round1(f1 - f0) : null;   // kg (want −)
+    const s0 = caliperSum(first), s1 = caliperSum(last);
+    const dSkin  = (s0 != null && s1 != null) ? round1(s1 - s0) : null;   // mm (want −)
+    const dWaist = (first.waist != null && last.waist != null) ? round1(last.waist - first.waist) : null;
+    const days   = daysBetween(first.date, last.date);
+
+    // Hero: the two headline wins (lean muscle up, body fat down).
+    const hero = [];
+    if(dLean != null) hero.push(
+      `<div class="prog-hero-stat"><div class="phs-big">${dLean>0?'+':''}${dLean}<small>kg</small></div>`
+      + `<div class="phs-lbl">Lean muscle</div></div>`);
+    hero.push(
+      `<div class="prog-hero-stat"><div class="phs-big">${dFat>0?'+':''}${dFat}<small>pts</small></div>`
+      + `<div class="phs-lbl">Body fat · now ${last.bodyFat}%</div></div>`);
+
+    // Supporting stats row (each coloured green when it moved the healthy way).
+    const stat = (label, val, good, unit) => {
+      if(val == null) return '';
+      const arrow = val > 0 ? '▲' : val < 0 ? '▼' : '▬';
+      return `<div class="prog-stat ${good ? 'pos' : 'neg'}"><div class="ps-val">${arrow} ${val>0?'+':''}${val}${unit}</div>`
+        + `<div class="ps-lbl">${label}</div></div>`;
+    };
+    const row = [
+      stat('Fat mass', dFatKg, dFatKg != null && dFatKg < 0, 'kg'),
+      stat('Waist', dWaist, dWaist != null && dWaist < 0, 'cm'),
+      stat('Skinfolds', dSkin, dSkin != null && dSkin < 0, 'mm')
+    ].filter(Boolean).join('');
+
+    return `<div class="prog-card">
+      <div class="prog-head">Your progress <span>since ${fmtDate(first.date)} · ${days} days</span></div>
+      <div class="prog-hero">${hero.join('')}</div>
+      ${row ? `<div class="prog-row">${row}</div>` : ''}
+      <div class="prog-cap">💪 Muscle up, fat down — that's real recomposition. Keep going.</div>
+    </div>`;
   },
 
   // Current-month vs last-month calendar windows. Returns ISO date strings:
@@ -2554,14 +2661,35 @@ const M = {
     const hist = measurements.slice().reverse().slice(0, 15);
     document.getElementById('measurement-history').innerHTML = hist.length ?
       hist.map(m => {
-        let detail = `${m.weight} kg`;
-        if(m.bodyFat) detail += ` | ${m.bodyFat}% BF`;
-        if(m.chest) detail += ` | Chest: ${m.chest}`;
-        if(m.waist) detail += ` | Waist: ${m.waist}`;
-        return `<div class="hist-item"><span class="hist-date">${fmtDate(m.date)}</span><div class="hist-detail">${detail}</div></div>`;
+        const parts = [];
+        if(m.weight) parts.push(`${m.weight} kg`);
+        if(m.bodyFat) parts.push(`${m.bodyFat}% BF`);
+        if(m.leanMass) parts.push(`${m.leanMass} kg lean`);
+        const sk = caliperSum(m);
+        if(sk) parts.push(`${Math.round(sk)} mm skinfolds`);
+        if(m.waist) parts.push(`Waist ${m.waist}`);
+        if(m.chest) parts.push(`Chest ${m.chest}`);
+        return `<div class="hist-item"><span class="hist-date">${fmtDate(m.date)}</span><div class="hist-detail">${parts.join(' · ')}</div></div>`;
       }).join('') : '<span class="muted">No measurements yet</span>';
 
     this.renderWeightChart();
+    this.renderCompositionCharts();
+  },
+
+  // Body-fat %, lean mass and total-skinfold trend charts (PT calliper data).
+  renderCompositionCharts() {
+    const meas = S.get('measurements', []);
+    const draw = (id, mapFn, opts, empty) => {
+      const canvas = document.getElementById(id);
+      if(!canvas) return;
+      const data = meas.map(m => ({x: m.date, y: mapFn(m)}))
+        .filter(d => d.y != null && !isNaN(d.y));
+      if(data.length < 2) { blankChart(canvas, empty); return; }
+      drawLineChart(canvas, data, opts);
+    };
+    draw('bodyfat-chart',  m => m.bodyFat,       {color:'#f59e0b', label:'%',  yPadding:1, decimals:1}, 'Need at least 2 body-fat readings');
+    draw('leanmass-chart', m => leanMassOf(m),   {color:'#10b981', label:'kg', yPadding:1, decimals:1}, 'Need at least 2 lean-mass readings');
+    draw('skinfold-chart', m => caliperSum(m),   {color:'#3b82f6', label:'mm', yPadding:5, decimals:0}, 'Need at least 2 calliper readings');
   },
 
   adjWeight(delta) {
@@ -3761,6 +3889,19 @@ function drawAvgLine(ctx, x0, x1, y, color, mean, decimals, unit) {
   ctx.fillText('avg ' + fmtAxis(mean, decimals) + (unit ? ' ' + unit : ''), x1 - 4, y - 5);
 }
 
+// Paint a centred placeholder message on an empty chart canvas.
+function blankChart(canvas, msg) {
+  if(!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = canvas.clientWidth * dpr;
+  canvas.height = canvas.clientHeight * dpr;
+  ctx.setTransform(1,0,0,1,0,0); ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,canvas.clientWidth,canvas.clientHeight);
+  ctx.fillStyle = '#6b7280'; ctx.font = '14px system-ui'; ctx.textAlign = 'center';
+  ctx.fillText(msg, canvas.clientWidth/2, canvas.clientHeight/2);
+}
+
 function drawLineChart(canvas, data, opts={}) {
   const {ctx, w, h} = setupCanvas(canvas);
   const pad = {top:24, right:16, bottom:34, left:56};
@@ -3985,6 +4126,27 @@ async function initApp() {
     }
     S.set('exercises', exercises);
     S.set('_seeded_stats_mar12', true);
+  }
+
+  // One-time seed: PT calliper body-composition readings (14 May + 10 Jul 2026).
+  // Callipers are accurate (Dean's PT), so these are the source of truth for
+  // body-fat %, lean mass and per-site skinfolds. Idempotent: merges by date.
+  if(!S.get('_seeded_pt_calipers', false)) {
+    const pt = [
+      {date:'2026-05-14', weight:112.1, height:193, waist:111,   bodyFat:30.19, leanMass:78.26, bfMethod:'caliper',
+       calipers:{chin:11.9,cheek:15.3,pec:41.6,triceps:32.5,subscap:21.5,midax:27.1,supraIliac:44.7,umbilical:58.5,knee:6.3,calf:14.5,quads:20.2,hams:28.9}},
+      {date:'2026-07-10', weight:113.7, height:193, waist:108.9, bodyFat:27.53, leanMass:82.4,  bfMethod:'caliper',
+       calipers:{chin:10.5,cheek:14.5,pec:38.1,triceps:28,subscap:18.9,midax:24.7,supraIliac:34.1,umbilical:47.1,knee:6.1,calf:14.5,quads:19.9,hams:26.9}}
+    ];
+    const meas = S.get('measurements', []);
+    pt.forEach(p => {
+      const i = meas.findIndex(m => m.date === p.date);
+      if(i >= 0) meas[i] = {...meas[i], ...p, calipers:{...(meas[i].calipers||{}), ...p.calipers}};
+      else meas.push(p);
+    });
+    meas.sort((a,b) => a.date.localeCompare(b.date));
+    S.set('measurements', meas);
+    S.set('_seeded_pt_calipers', true);
   }
 
   // One-time: retro-correct historical steps for the iPhone+Watch double-count.
