@@ -642,7 +642,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 66;
+const APP_VERSION = 67;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -654,6 +654,8 @@ const KJ_TO_KCAL = 1 / 4.184;
 // drifts; bump STEP_FIX_VERSION to re-run the historical migration after changing it.
 const STEP_INFLATION = 1.78;
 const STEP_FIX_VERSION = 1;
+// Bump when a new PT calliper reading is added to the seed below.
+const PT_SEED_VERSION = 2;
 const correctSteps = (v) => Math.round((Number(v) || 0) / STEP_INFLATION);
 
 /* ── IndexedDB Backup Layer ── */
@@ -4169,15 +4171,19 @@ async function initApp() {
     S.set('_seeded_stats_mar12', true);
   }
 
-  // One-time seed: PT calliper body-composition readings (14 May + 10 Jul 2026).
+  // Seed: PT calliper body-composition readings (14 May, 10 Jul, 19 Aug 2026).
   // Callipers are accurate (Dean's PT), so these are the source of truth for
   // body-fat %, lean mass and per-site skinfolds. Idempotent: merges by date.
-  if(!S.get('_seeded_pt_calipers', false)) {
+  // Versioned rather than a boolean so a new PT reading can be appended here and
+  // picked up by existing installs — bump PT_SEED_VERSION when adding one.
+  if(S.get('_seeded_pt_calipers_v', 0) < PT_SEED_VERSION) {
     const pt = [
       {date:'2026-05-14', weight:112.1, height:193, waist:111,   bodyFat:30.19, leanMass:78.26, bfMethod:'caliper',
        calipers:{chin:11.9,cheek:15.3,pec:41.6,triceps:32.5,subscap:21.5,midax:27.1,supraIliac:44.7,umbilical:58.5,knee:6.3,calf:14.5,quads:20.2,hams:28.9}},
       {date:'2026-07-10', weight:113.7, height:193, waist:108.9, bodyFat:27.53, leanMass:82.4,  bfMethod:'caliper',
-       calipers:{chin:10.5,cheek:14.5,pec:38.1,triceps:28,subscap:18.9,midax:24.7,supraIliac:34.1,umbilical:47.1,knee:6.1,calf:14.5,quads:19.9,hams:26.9}}
+       calipers:{chin:10.5,cheek:14.5,pec:38.1,triceps:28,subscap:18.9,midax:24.7,supraIliac:34.1,umbilical:47.1,knee:6.1,calf:14.5,quads:19.9,hams:26.9}},
+      {date:'2026-08-19', weight:112,   height:193, waist:106.2, bodyFat:25.53, leanMass:83.41, bfMethod:'caliper',
+       calipers:{chin:9.5,cheek:14.3,pec:34.9,triceps:22.3,subscap:17.7,midax:22.3,supraIliac:28.5,umbilical:42.5,knee:5.1,calf:11.1,quads:19.3,hams:26.7}}
     ];
     const meas = S.get('measurements', []);
     pt.forEach(p => {
@@ -4187,7 +4193,8 @@ async function initApp() {
     });
     meas.sort((a,b) => a.date.localeCompare(b.date));
     S.set('measurements', meas);
-    S.set('_seeded_pt_calipers', true);
+    S.set('_seeded_pt_calipers_v', PT_SEED_VERSION);
+    S.set('_seeded_pt_calipers', true); // legacy flag, kept so older code paths stay quiet
   }
 
   // One-time: retro-correct historical steps for the iPhone+Watch double-count.
