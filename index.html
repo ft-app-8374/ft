@@ -275,6 +275,16 @@ textarea{resize:vertical;min-height:80px}
 .sc-bar i.neg{background:#f87171}
 .sc-ft{font-size:10.5px;color:#64748b;margin-top:3px}
 /* Small multiples: one mini chart per core site, no categorical colour needed */
+/* Body map: anatomical locator for the calliper sites */
+#body-map svg{width:100%;height:auto;display:block}
+.bm-fig{fill:#1e293b;stroke:#334155;stroke-width:1}
+.bm-limb{stroke:#1e293b;stroke-linecap:round;fill:none}
+.bm-limb-o{stroke:#334155;stroke-linecap:round;fill:none}
+.bm-cap{fill:#64748b;font-size:7px;font-weight:700;letter-spacing:.5px;text-anchor:middle}
+.bm-lbl{fill:#94a3b8;font-size:6.6px;font-weight:600}
+.bm-lead{stroke:#475569;stroke-width:.6}
+.bm-dot{stroke:#0f172a;stroke-width:1.2;cursor:pointer}
+.bm-dot.sel{stroke:#f8fafc;stroke-width:1.6}
 .sm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
 .sm-cell{background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:8px 8px 4px}
 .sm-hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
@@ -535,6 +545,13 @@ textarea{resize:vertical;min-height:80px}
   </div>
 
   <div class="card">
+    <h3>Where these sites are</h3>
+    <p class="muted small" style="margin:-4px 0 6px">Tap a site for its numbers. Dot size scales with how much it dropped.</p>
+    <div id="body-map"></div>
+    <div id="body-map-info" class="muted small" style="text-align:center;min-height:18px;margin-top:2px"></div>
+  </div>
+
+  <div class="card">
     <h3>Core sites over time</h3>
     <p class="muted small" style="margin:-4px 0 10px">The torso folds that drive the body-fat number.</p>
     <div id="site-trends" class="sm-grid"></div>
@@ -677,7 +694,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 71;
+const APP_VERSION = 72;
 
 // Retired features. Dean stopped logging food (Aug 2026), so intake-derived views
 // have nothing to show. These hide the UI only — all stored data (daily[].foods,
@@ -2783,6 +2800,7 @@ const M = {
     draw('leanmass-chart', m => leanMassOf(m),   {color:'#10b981', label:'kg', yPadding:1, decimals:1}, 'Need at least 2 lean-mass readings');
     draw('skinfold-chart', m => caliperSum(m),   {color:'#3b82f6', label:'mm', yPadding:5, decimals:0}, 'Need at least 2 calliper readings');
     this.renderSiteCharts();
+    this.renderBodyMap();
   },
 
   // Human-readable names for the 12 PT calliper sites, in measurement order.
@@ -2792,6 +2810,112 @@ const M = {
           ['quads','Quadriceps'],['hams','Hamstrings']],
   // The torso folds that dominate the body-fat calculation.
   CORE: ['pec','subscap','midax','supraIliac','umbilical','triceps'],
+
+  // Site positions in FIGURE-LOCAL coords (bodyFigure centres each figure on ox+45).
+  // Front-view sites label down the left margin, back-view sites down the right, so
+  // the two label columns can never collide with each other or with the figures.
+  SITE_POS: {
+    cheek:      {view:'front', x:39, y:16},
+    chin:       {view:'front', x:45, y:30},
+    pec:        {view:'front', x:37, y:47},
+    midax:      {view:'front', x:31, y:60},
+    umbilical:  {view:'front', x:40, y:76},
+    supraIliac: {view:'front', x:34, y:85},
+    quads:      {view:'front', x:39, y:122},
+    knee:       {view:'front', x:38, y:160},
+    subscap:    {view:'back',  x:36, y:50},
+    triceps:    {view:'back',  x:66, y:57},
+    hams:       {view:'back',  x:38, y:124},
+    calf:       {view:'back',  x:37, y:160}
+  },
+  FRONT_OX: 45,
+  BACK_OX: 135,
+
+  // One simple silhouette, drawn twice (front + back) from primitives rather than
+  // one traced path — easier to keep anatomically sane and to place dots against.
+  bodyFigure(ox, caption) {
+    const g = [];
+    g.push(`<circle class="bm-fig" cx="${ox+45}" cy="18" r="11"/>`);
+    g.push(`<rect class="bm-fig" x="${ox+41}" y="27" width="8" height="7" rx="2"/>`);
+    g.push(`<path class="bm-fig" d="M${ox+30} 36 Q${ox+45} 31 ${ox+60} 36 L${ox+58} 66 Q${ox+56} 78 ${ox+57} 92 L${ox+33} 92 Q${ox+34} 78 ${ox+32} 66 Z"/>`);
+    const limbs = [
+      [ox+32, 38, ox+18, 82],  [ox+58, 38, ox+72, 82],
+      [ox+39, 92, ox+36, 178], [ox+51, 92, ox+54, 178]
+    ];
+    limbs.forEach(([x1,y1,x2,y2], i) => {
+      const w = i < 2 ? 9 : 13;
+      g.push(`<line class="bm-limb-o" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${w+2}"/>`);
+      g.push(`<line class="bm-limb" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke-width="${w}"/>`);
+    });
+    g.push(`<text class="bm-cap" x="${ox+45}" y="196">${caption}</text>`);
+    return g.join('');
+  },
+
+  renderBodyMap() {
+    const el = document.getElementById('body-map');
+    if(!el) return;
+    const withCal = S.get('measurements', [])
+      .filter(m => m.calipers && Object.keys(m.calipers).length)
+      .sort((a,b) => a.date.localeCompare(b.date));
+    if(!withCal.length) { el.innerHTML = '<p class="muted small">No calliper readings yet.</p>'; return; }
+    const first = withCal[0], last = withCal[withCal.length - 1];
+    const multi = withCal.length > 1;
+
+    const rows = Object.entries(this.SITE_POS).map(([k, pos]) => {
+      const a = first.calipers[k], b = last.calipers[k];
+      const name = (this.SITES.find(s => s[0] === k) || [k, k])[1];
+      const d = (a != null && b != null) ? +(b - a).toFixed(1) : null;
+      const pct = (d != null && a) ? Math.round(d / a * 100) : null;
+      const ox = pos.view === 'front' ? this.FRONT_OX : this.BACK_OX;
+      return {k, name, a, b, d, pct, view: pos.view, cx: ox + pos.x, cy: pos.y};
+    }).filter(r => r.b != null);
+
+    // Assign each label an evenly spaced slot in its margin, ordered by dot height:
+    // collisions become impossible rather than something to eyeball.
+    const LEFT_X = 3, RIGHT_X = 247, TOP = 16, BOT = 186;
+    ['front','back'].forEach(view => {
+      const set = rows.filter(r => r.view === view).sort((a,b) => a.cy - b.cy);
+      const step = set.length > 1 ? (BOT - TOP) / (set.length - 1) : 0;
+      set.forEach((r, i) => {
+        r.ly = Math.round(TOP + i * step);
+        r.lx = view === 'front' ? LEFT_X : RIGHT_X;
+        r.anchor = view === 'front' ? 'start' : 'end';
+      });
+    });
+
+    const maxMag = Math.max(...rows.map(r => Math.abs(r.pct || 0)), 1);
+    const dots = rows.map(r => {
+      const rad = multi && r.pct != null ? 2.6 + Math.abs(r.pct) / maxMag * 3.2 : 3.4;
+      const good = r.d == null || r.d <= 0;
+      const fill = !multi ? '#3b82f6' : (good ? '#34d399' : '#f87171');
+      const val = multi && r.d != null ? `${r.d > 0 ? '+' : '−'}${Math.abs(r.d)}mm` : `${r.b}mm`;
+      const tx = r.anchor === 'start' ? r.lx : r.lx;
+      const leadX = r.anchor === 'start' ? r.lx + 30 : r.lx - 30;
+      return `<g>`
+        + `<line class="bm-lead" x1="${leadX}" y1="${r.ly - 2}" x2="${r.cx}" y2="${r.cy}"/>`
+        + `<text class="bm-lbl" x="${tx}" y="${r.ly}" text-anchor="${r.anchor}">${r.name}</text>`
+        + `<text class="bm-lbl" x="${tx}" y="${r.ly + 7}" text-anchor="${r.anchor}" style="fill:${fill}">${val}</text>`
+        + `<circle class="bm-dot" data-site="${r.k}" cx="${r.cx}" cy="${r.cy}" r="${rad.toFixed(1)}" fill="${fill}"/>`
+        + `</g>`;
+    }).join('');
+
+    el.innerHTML = `<svg viewBox="0 0 250 202" role="img" aria-label="Calliper site locations on the front and back of the body">`
+      + this.bodyFigure(this.FRONT_OX, 'FRONT')
+      + this.bodyFigure(this.BACK_OX, 'BACK')
+      + dots + `</svg>`;
+
+    el.querySelectorAll('.bm-dot').forEach(dot => {
+      dot.addEventListener('click', () => {
+        el.querySelectorAll('.bm-dot').forEach(d => d.classList.remove('sel'));
+        dot.classList.add('sel');
+        const r = rows.find(x => x.k === dot.dataset.site);
+        const info = document.getElementById('body-map-info');
+        if(info && r) info.textContent = r.d != null
+          ? `${r.name}: ${r.a}mm → ${r.b}mm (${r.d > 0 ? '+' : '−'}${Math.abs(r.d)}mm, ${r.pct > 0 ? '+' : ''}${r.pct}%)`
+          : `${r.name}: ${r.b}mm`;
+      });
+    });
+  },
 
   renderSiteCharts() {
     const round1 = n => Math.round(n*10)/10;   // local: the T.renderProgress one is not global
