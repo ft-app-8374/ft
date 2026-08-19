@@ -262,6 +262,27 @@ textarea{resize:vertical;min-height:80px}
 .chg-top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:6px}
 .chg-nm{color:#94a3b8}
 .chg-dl{font-weight:800}
+/* Per-site skinfold change rows (single measure, polarity coloured) */
+.sc-row{margin:9px 0}
+.sc-top{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:4px}
+.sc-nm{color:#cbd5e1;font-weight:600}
+.sc-dl{font-weight:800}
+.sc-dl.pos{color:#34d399}
+.sc-dl.neg{color:#f87171}
+.sc-dl small{font-weight:600;opacity:.7;font-size:11px;margin-left:3px;color:#94a3b8}
+.sc-bar{height:8px;background:#1e293b;border-radius:4px;overflow:hidden}
+.sc-bar i{display:block;height:100%;background:#34d399;border-radius:4px}
+.sc-bar i.neg{background:#f87171}
+/* Small multiples: one mini chart per core site, no categorical colour needed */
+.sm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.sm-cell{background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:8px 8px 4px}
+.sm-hd{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px}
+.sm-nm{font-size:11.5px;color:#cbd5e1;font-weight:700}
+.sm-dl{font-size:11px;font-weight:700}
+.sm-dl.pos{color:#34d399}
+.sm-dl.neg{color:#f87171}
+.sm-cell canvas{width:100%;height:52px;display:block}
+.sm-ft{display:flex;justify-content:space-between;font-size:10px;color:#64748b;margin-top:-2px}
 .chg-dl small{font-weight:600;opacity:.75;font-size:11px;margin-left:2px}
 .chg-dl.pos{color:#34d399}
 .chg-dl.neg{color:#f87171}
@@ -507,6 +528,18 @@ textarea{resize:vertical;min-height:80px}
   </div>
 
   <div class="card">
+    <h3>Where the fat came off</h3>
+    <p class="muted small" style="margin:-4px 0 10px">Change per calliper site, first reading to latest. Biggest drop first.</p>
+    <div id="site-change"></div>
+  </div>
+
+  <div class="card">
+    <h3>Core sites over time</h3>
+    <p class="muted small" style="margin:-4px 0 10px">The torso folds that drive the body-fat number.</p>
+    <div id="site-trends" class="sm-grid"></div>
+  </div>
+
+  <div class="card">
     <h3>History</h3>
     <div id="measurement-history"></div>
   </div>
@@ -643,7 +676,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 68;
+const APP_VERSION = 69;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -2742,6 +2775,85 @@ const M = {
     draw('bodyfat-chart',  m => m.bodyFat,       {color:'#f59e0b', label:'%',  yPadding:1, decimals:1}, 'Need at least 2 body-fat readings');
     draw('leanmass-chart', m => leanMassOf(m),   {color:'#10b981', label:'kg', yPadding:1, decimals:1}, 'Need at least 2 lean-mass readings');
     draw('skinfold-chart', m => caliperSum(m),   {color:'#3b82f6', label:'mm', yPadding:5, decimals:0}, 'Need at least 2 calliper readings');
+    this.renderSiteCharts();
+  },
+
+  // Human-readable names for the 12 PT calliper sites, in measurement order.
+  SITES: [['chin','Chin'],['cheek','Cheek'],['pec','Pec'],['triceps','Triceps'],
+          ['subscap','Subscapularis'],['midax','Midaxillary'],['supraIliac','Supra-iliac'],
+          ['umbilical','Umbilical'],['knee','Knee'],['calf','Calf'],
+          ['quads','Quadriceps'],['hams','Hamstrings']],
+  // The torso folds that dominate the body-fat calculation.
+  CORE: ['pec','subscap','midax','supraIliac','umbilical','triceps'],
+
+  renderSiteCharts() {
+    const round1 = n => Math.round(n*10)/10;   // local: the T.renderProgress one is not global
+    const withCal = S.get('measurements', [])
+      .filter(m => m.calipers && Object.keys(m.calipers).length)
+      .sort((a,b) => a.date.localeCompare(b.date));
+    const changeEl = document.getElementById('site-change');
+    const trendEl  = document.getElementById('site-trends');
+
+    if(withCal.length < 2) {
+      const msg = '<p class="muted small">Need at least 2 calliper readings.</p>';
+      if(changeEl) changeEl.innerHTML = msg;
+      if(trendEl)  trendEl.innerHTML  = msg;
+      return;
+    }
+    const first = withCal[0], last = withCal[withCal.length - 1];
+
+    // ── Chart 1: change per site, sorted by biggest reduction ──
+    // One measure with a direction, so colour encodes polarity (down = good) using
+    // the pair already used elsewhere in the app. Every bar is direct-labelled, so
+    // identity never depends on colour alone.
+    if(changeEl) {
+      const rows = this.SITES
+        .map(([k, name]) => ({name, a: first.calipers[k], b: last.calipers[k]}))
+        .filter(r => r.a != null && r.b != null)
+        .map(r => ({...r, d: +(r.b - r.a).toFixed(1)}))
+        .sort((x, y) => x.d - y.d);
+      const maxMag = Math.max(...rows.map(r => Math.abs(r.d)), 0.1);
+      changeEl.innerHTML = rows.map(r => {
+        const good = r.d <= 0;
+        const w = Math.max(4, Math.round(Math.abs(r.d) / maxMag * 100));
+        return `<div class="sc-row"><div class="sc-top"><span class="sc-nm">${r.name}</span>`
+          + `<span class="sc-dl ${good ? 'pos' : 'neg'}">${r.d > 0 ? '▲' : r.d < 0 ? '▼' : '▬'} `
+          + `${Math.abs(r.d)}mm<small>${round1(r.a)} → ${round1(r.b)}</small></span></div>`
+          + `<div class="sc-bar"><i class="${good ? '' : 'neg'}" style="width:${w}%"></i></div></div>`;
+      }).join('');
+    }
+
+    // ── Chart 2: small multiples, one mini line per core site ──
+    // Small multiples rather than 6 lines on shared axes: no categorical palette is
+    // needed (each cell is titled), and it stays readable at phone width.
+    if(trendEl) {
+      trendEl.innerHTML = this.CORE.map(k => {
+        const name = (this.SITES.find(s => s[0] === k) || [k, k])[1];
+        return `<div class="sm-cell"><div class="sm-hd"><span class="sm-nm">${name}</span>`
+          + `<span class="sm-dl" data-site="${k}"></span></div>`
+          + `<canvas data-sparkline="${k}"></canvas>`
+          + `<div class="sm-ft"><span></span><span></span></div></div>`;
+      }).join('');
+
+      this.CORE.forEach(k => {
+        const pts = withCal.map(m => ({x: m.date, y: m.calipers[k]}))
+          .filter(d => d.y != null && !isNaN(d.y));
+        const cell = trendEl.querySelector(`canvas[data-sparkline="${k}"]`);
+        const dl   = trendEl.querySelector(`.sm-dl[data-site="${k}"]`);
+        const ft   = cell && cell.parentElement.querySelector('.sm-ft');
+        if(!cell || pts.length < 2) return;
+        const d = +(pts[pts.length-1].y - pts[0].y).toFixed(1);
+        if(dl) {
+          dl.textContent = `${d > 0 ? '▲' : d < 0 ? '▼' : '▬'} ${Math.abs(d)}mm`;
+          dl.className = 'sm-dl ' + (d <= 0 ? 'pos' : 'neg');
+        }
+        if(ft) {
+          ft.children[0].textContent = fmtShort(pts[0].x);
+          ft.children[1].textContent = fmtShort(pts[pts.length-1].x);
+        }
+        drawSparkline(cell, pts, d <= 0 ? '#34d399' : '#f87171');
+      });
+    }
   },
 
   adjWeight(delta) {
@@ -3574,9 +3686,20 @@ const C = {
 
   renderWeight(canvas) {
     const measurements = S.get('measurements', []).filter(m => m.weight);
-    const data = this.filterByRange(measurements.map(m => ({x: m.date, y: m.weight})));
+    const all = measurements.map(m => ({x: m.date, y: m.weight}));
+    let data = this.filterByRange(all);
+    // Weight comes from measurements, which are logged every month or two — far
+    // sparser than the daily health data the range pills are sized for. A 1W/1M
+    // window usually catches 0-1 of them, which rendered as an empty chart even
+    // though the history was there. Fall back to the full series instead.
+    let fellBack = false;
+    if(data.length < 2 && all.length >= 2) { data = all; fellBack = true; }
     if(data.length < 2) { clearCanvas(canvas, 'Need at least 2 weight entries'); return; }
     drawLineChart(canvas, data, {color:'#3b82f6', label:'kg', yPadding:2});
+    const info = document.getElementById('chart-tap-info');
+    if(info) info.textContent = fellBack
+      ? `Showing all ${data.length} weigh-ins — none in the selected range`
+      : `${data.length} weigh-ins`;
   },
 
   renderVolume(canvas) {
@@ -3942,6 +4065,40 @@ function drawAvgLine(ctx, x0, x1, y, color, mean, decimals, unit) {
 }
 
 // Paint a centred placeholder message on an empty chart canvas.
+// Short date label for compact chart footers, e.g. "14 May".
+function fmtShort(iso) {
+  const dt = new Date(iso + 'T00:00:00');
+  return dt.toLocaleDateString('en-AU', {day:'numeric', month:'short'});
+}
+
+// Minimal 2px line + end dots, no axes — used for the per-site small multiples,
+// where the cell title and the labelled delta carry the meaning.
+function drawSparkline(canvas, data, color) {
+  const {ctx, w, h} = setupCanvas(canvas);
+  const pad = {t:8, r:8, b:8, l:8};
+  const cw = w - pad.l - pad.r, ch = h - pad.t - pad.b;
+  const ys = data.map(d => d.y);
+  const min = Math.min(...ys), max = Math.max(...ys);
+  const range = (max - min) || 1;
+  const pt = i => ({
+    x: pad.l + (data.length === 1 ? cw/2 : (i/(data.length-1)) * cw),
+    y: pad.t + ch - ((data[i].y - min)/range) * ch
+  });
+  ctx.clearRect(0,0,w,h);
+  ctx.strokeStyle = color; ctx.lineWidth = 2;
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath();
+  data.forEach((_, i) => { const q = pt(i); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); });
+  ctx.stroke();
+  // 2px surface ring so dots stay legible where the line passes behind them
+  data.forEach((_, i) => {
+    const q = pt(i);
+    ctx.beginPath(); ctx.arc(q.x, q.y, 4, 0, Math.PI*2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = '#0f172a'; ctx.stroke();
+  });
+}
+
 function blankChart(canvas, msg) {
   if(!canvas) return;
   const ctx = canvas.getContext('2d');
