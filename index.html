@@ -273,6 +273,7 @@ textarea{resize:vertical;min-height:80px}
 .sc-bar{height:8px;background:#1e293b;border-radius:4px;overflow:hidden}
 .sc-bar i{display:block;height:100%;background:#34d399;border-radius:4px}
 .sc-bar i.neg{background:#f87171}
+.sc-ft{font-size:10.5px;color:#64748b;margin-top:3px}
 /* Small multiples: one mini chart per core site, no categorical colour needed */
 .sm-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
 .sm-cell{background:#0f172a;border:1px solid #1e293b;border-radius:10px;padding:8px 8px 4px}
@@ -676,7 +677,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 70;
+const APP_VERSION = 71;
 
 // Retired features. Dean stopped logging food (Aug 2026), so intake-derived views
 // have nothing to show. These hide the UI only — all stored data (daily[].foods,
@@ -2816,16 +2817,22 @@ const M = {
       const rows = this.SITES
         .map(([k, name]) => ({name, a: first.calipers[k], b: last.calipers[k]}))
         .filter(r => r.a != null && r.b != null)
-        .map(r => ({...r, d: +(r.b - r.a).toFixed(1)}))
+        .map(r => ({...r, d: +(r.b - r.a).toFixed(1),
+                    pct: r.a ? Math.round((r.b - r.a) / r.a * 100) : null}))
         .sort((x, y) => x.d - y.d);
       const maxMag = Math.max(...rows.map(r => Math.abs(r.d)), 0.1);
       changeEl.innerHTML = rows.map(r => {
         const good = r.d <= 0;
         const w = Math.max(4, Math.round(Math.abs(r.d) / maxMag * 100));
+        // mm is the absolute drop (and what the bar length and sort use); the % is the
+        // same drop relative to that site's starting thickness, so small sites like
+        // chin read as meaningful even though their mm change is tiny.
+        const pct = r.pct == null ? '' : ` · ${r.pct > 0 ? '+' : ''}${r.pct}%`;
         return `<div class="sc-row"><div class="sc-top"><span class="sc-nm">${r.name}</span>`
           + `<span class="sc-dl ${good ? 'pos' : 'neg'}">${r.d > 0 ? '▲' : r.d < 0 ? '▼' : '▬'} `
-          + `${Math.abs(r.d)}mm<small>${round1(r.a)} → ${round1(r.b)}</small></span></div>`
-          + `<div class="sc-bar"><i class="${good ? '' : 'neg'}" style="width:${w}%"></i></div></div>`;
+          + `${Math.abs(r.d)}mm${pct}</span></div>`
+          + `<div class="sc-bar"><i class="${good ? '' : 'neg'}" style="width:${w}%"></i></div>`
+          + `<div class="sc-ft">${round1(r.a)}mm → ${round1(r.b)}mm</div></div>`;
       }).join('');
     }
 
