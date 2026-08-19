@@ -676,7 +676,13 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 69;
+const APP_VERSION = 70;
+
+// Retired features. Dean stopped logging food (Aug 2026), so intake-derived views
+// have nothing to show. These hide the UI only — all stored data (daily[].foods,
+// netCalHistory) is untouched, and the render functions stay in the file. Flip a
+// flag back to false to restore the tab/chart exactly as it was.
+const RETIRED = { food: true, calories: true, netcal: true };
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -4278,6 +4284,17 @@ function drawMultiLineChart(canvas, series, opts={}) {
 
 // Auto-restore from IndexedDB if localStorage was wiped (e.g. by clearing site data)
 async function initApp() {
+  // Hide retired features (data retained — see RETIRED).
+  if(RETIRED.food) {
+    document.querySelectorAll('#tab-bar button[data-tab="food"]').forEach(b => b.style.display = 'none');
+  }
+  ['calories','netcal'].forEach(k => {
+    if(!RETIRED[k]) return;
+    document.querySelectorAll(`#chart-type-pills button[data-chart="${k}"]`).forEach(b => b.style.display = 'none');
+  });
+  // If a retired chart was the last one selected, fall back to Weight.
+  if(typeof C !== 'undefined' && RETIRED[C.chartType]) C.switchChart('weight');
+
   const hasData = localStorage.getItem('ft.exercises') || localStorage.getItem('ft.daily');
   if(!hasData) {
     const restored = await Backup.restore();
