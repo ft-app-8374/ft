@@ -262,6 +262,7 @@ textarea{resize:vertical;min-height:80px}
 .chg-top{display:flex;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:6px}
 .chg-nm{color:#94a3b8}
 .chg-dl{font-weight:800}
+.chg-dl small{font-weight:600;opacity:.75;font-size:11px;margin-left:2px}
 .chg-dl.pos{color:#34d399}
 .chg-dl.neg{color:#f87171}
 .chg-bar{height:10px;background:#0b1220;border-radius:5px;overflow:hidden}
@@ -642,7 +643,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 67;
+const APP_VERSION = 68;
 // Apple Health in AU logs energy in kilojoules. Convert kJ → kcal (1 kcal = 4.184 kJ).
 const KJ_TO_KCAL = 1 / 4.184;
 
@@ -1092,13 +1093,18 @@ const T = {
     const f0 = fatMass(first), f1 = fatMass(last);
     const s0 = caliperSum(first), s1 = caliperSum(last);
     const metrics = [];
-    const add = (name, a, b, unit, goodDown) => {
+    // showPct=false for body fat: it is already a percentage, so a relative change
+    // ("down 15%") reads as if body fat fell to 15%, when the number that matters is
+    // the 4.7-point drop. Points are shown with from→to instead; the bar is still
+    // sized on relative change so it stays comparable with mm/kg/cm metrics.
+    const add = (name, a, b, unit, goodDown, showPct = true) => {
       if(a == null || b == null || a === 0) return;
       const d = round1(b - a), pct = (b - a) / a * 100;
-      metrics.push({name, d, pct, unit, good: goodDown ? d < 0 : d > 0, mag: Math.abs(pct)});
+      metrics.push({name, d, pct, unit, showPct, from: a, to: b,
+                    good: goodDown ? d < 0 : d > 0, mag: Math.abs(pct)});
     };
     add('Skinfolds', s0, s1, 'mm', true);
-    add('Body fat', first.bodyFat, last.bodyFat, 'pts', true);
+    add('Body fat', first.bodyFat, last.bodyFat, 'pts', true, false);
     add('Fat mass', f0, f1, 'kg', true);
     add('Lean mass', l0, l1, 'kg', false);
     add('Waist', first.waist, last.waist, 'cm', true);
@@ -1108,7 +1114,10 @@ const T = {
       const arrow = m.d > 0 ? '▲' : m.d < 0 ? '▼' : '▬';
       const w = Math.max(6, Math.round(m.mag / maxMag * 100));
       return `<div class="chg-row"><div class="chg-top"><span class="chg-nm">${m.name}</span>`
-        + `<span class="chg-dl ${m.good ? 'pos' : 'neg'}">${arrow} ${Math.abs(m.d)}${m.unit} · ${m.pct>0?'+':''}${Math.round(m.pct)}%</span></div>`
+        + `<span class="chg-dl ${m.good ? 'pos' : 'neg'}">${arrow} ${Math.abs(m.d)}${m.unit}`
+        + (m.showPct ? ` · ${m.pct>0?'+':''}${Math.round(m.pct)}%`
+                     : ` <small>${round1(m.from)}% &rarr; ${round1(m.to)}%</small>`)
+        + `</span></div>`
         + `<div class="chg-bar"><i class="${m.good ? '' : 'neg'}" style="width:${w}%"></i></div></div>`;
     }).join('');
 
