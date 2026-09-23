@@ -225,6 +225,30 @@ textarea{resize:vertical;min-height:80px}
 .wk-meta b{color:#94a3b8}
 
 /* ── Body-composition progress hero (homepage "overall gains") ── */
+/* ongoing body-fat tracker (homepage headline metric) */
+.bf-card{background:linear-gradient(150deg,#2a1e08,#0f172a);border:1px solid #78350f;border-radius:18px;
+  padding:16px 16px 14px;margin-bottom:16px;box-shadow:0 0 20px rgba(245,158,11,.07)}
+.bf-head{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#a8a29e;font-weight:800}
+.bf-head span{color:#78716c;letter-spacing:.3px;text-transform:none;font-weight:600}
+.bf-top{display:flex;align-items:baseline;gap:12px;margin-top:8px;flex-wrap:wrap}
+.bf-big{font-size:42px;font-weight:800;color:#fbbf24;line-height:1}
+.bf-big small{font-size:20px;font-weight:700;color:#f59e0b;margin-left:1px}
+.bf-delta{font-size:14px;font-weight:800;display:flex;align-items:baseline;gap:6px}
+.bf-delta.pos{color:#34d399}.bf-delta.neg{color:#f87171}.bf-delta.flat{color:#94a3b8}
+.bf-delta small{font-size:11.5px;font-weight:600;color:#78716c}
+.bf-spark{width:100%;height:96px;margin-top:10px;display:block;overflow:visible}
+.bf-pt{fill:#fde68a;font-size:11px;font-weight:800;text-anchor:middle}
+.bf-dt{fill:#78716c;font-size:9.5px;font-weight:600;text-anchor:middle}
+.bf-rate{font-size:12.5px;color:#a8a29e;font-weight:600;margin-top:4px;text-align:center}
+.bf-rate b{color:#fbbf24}
+.bf-rate .pos{color:#34d399;font-weight:800}.bf-rate .neg{color:#f87171;font-weight:800}
+.bf-stats{display:flex;gap:8px;margin-top:14px}
+.bf-stat{flex:1;background:#0b1220;border:1px solid #292524;border-radius:12px;padding:9px 6px;text-align:center;min-width:0}
+.bf-sv{font-size:15px;font-weight:800;color:#e7e5e4;white-space:nowrap}
+.bf-sv small{font-size:10.5px;font-weight:700;color:#78716c;margin-left:1px}
+.bf-sl{font-size:10.5px;color:#78716c;font-weight:700;margin-top:3px;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+.bf-chg{margin-left:4px;font-weight:800;letter-spacing:0}
+.bf-chg.pos{color:#34d399}.bf-chg.neg{color:#f87171}.bf-chg.flat{color:#78716c}
 .prog-card{background:linear-gradient(150deg,#0f2417,#0f172a);border:1px solid #14532d;border-radius:18px;
   padding:16px 16px 14px;margin-top:16px;box-shadow:0 0 20px rgba(16,185,129,.06)}
 .prog-head{font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#64748b;font-weight:800}
@@ -694,7 +718,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 72;
+const APP_VERSION = 73;
 
 // Retired features. Dean stopped logging food (Aug 2026), so intake-derived views
 // have nothing to show. These hide the UI only — all stored data (daily[].foods,
@@ -713,7 +737,7 @@ const KJ_TO_KCAL = 1 / 4.184;
 const STEP_INFLATION = 1.78;
 const STEP_FIX_VERSION = 1;
 // Bump when a new PT calliper reading is added to the seed below.
-const PT_SEED_VERSION = 2;
+const PT_SEED_VERSION = 3;
 const correctSteps = (v) => Math.round((Number(v) || 0) / STEP_INFLATION);
 
 /* ── IndexedDB Backup Layer ── */
@@ -1046,12 +1070,15 @@ const T = {
     const daysRemaining = Math.max(0, 7 - daysElapsed);
     if(rangeEl) rangeEl.textContent = `${fmtDate(tws)} – ${fmtDate(addDays(tws,6))}`;
 
-    // Body-comp progress hero shows whenever ≥2 readings exist — independent of
-    // Apple Health sync, so it survives the "no health data" early-returns below.
+    // Body-comp cards are independent of Apple Health, so they are built up-front
+    // and prepended on every path — including the "no health data" early-returns
+    // below. Body fat leads: it is the metric Dean tracks, and it is measured by
+    // his PT rather than synced, so it must never depend on a health import.
+    const bodyFatHTML = this.renderBodyFat();
     const progressHTML = this.renderProgress();
 
     if(!health || !health.lastImport) {
-      el.innerHTML = progressHTML + '<div class="muted" style="text-align:center;padding:12px">Sync health data to see your weekly trends.</div>';
+      el.innerHTML = bodyFatHTML + progressHTML + '<div class="muted" style="text-align:center;padding:12px">Sync health data to see your weekly trends.</div>';
       return;
     }
 
@@ -1067,7 +1094,7 @@ const T = {
     });
 
     if(METRICS.every(m => m.tw.count === 0 && m.lw.count === 0)) {
-      el.innerHTML = progressHTML + '<div class="muted" style="text-align:center;padding:12px">No Energy / Exercise / Steps data yet for this week or last. Sync from Apple Health.</div>';
+      el.innerHTML = bodyFatHTML + progressHTML + '<div class="muted" style="text-align:center;padding:12px">No Energy / Exercise / Steps data yet for this week or last. Sync from Apple Health.</div>';
       return;
     }
 
@@ -1097,7 +1124,9 @@ const T = {
         <div class="dial-trend ${cls}">${txt}</div>
       </div>`;
     };
-    let html = `<div class="dial-row">${METRICS.map(dial).join('')}</div>`;
+    // Body fat first — the headline metric, above the weekly activity dials.
+    let html = bodyFatHTML;
+    html += `<div class="dial-row">${METRICS.map(dial).join('')}</div>`;
     html += `<div class="dial-cap">Daily average this week · ▲▼ vs last week</div>`;
 
     // ── Body-composition progress hero (the "overall gains" reflection) ──
@@ -1110,6 +1139,102 @@ const T = {
     html += `<div class="wk-meta">${dLeft > 0 ? `Day ${daysElapsed} of 7 · <b>${dtxt} left</b> to close the week` : 'Week complete'}</div>`;
 
     el.innerHTML = html;
+  },
+
+  // ONGOING BODY-FAT TRACKER — the homepage's headline metric.
+  //
+  // Deliberately different from renderProgress() below, which compares FIRST vs
+  // LATEST to answer "how far have I come". This answers "where am I now, and which
+  // way am I heading": every reading in sequence, the change since the last PT
+  // session, the rate per month, and the supporting measurements from that session.
+  // Body fat is the number Dean cares about, so it sits above the weekly dials.
+  // Needs only ONE reading (a single point still shows the current number).
+  renderBodyFat() {
+    const all = S.get('measurements', [])
+      .filter(m => m.bodyFat != null)
+      .sort((a,b) => a.date.localeCompare(b.date));
+    if(!all.length) return '';
+    const first = all[0], last = all[all.length-1];
+    const prev = all.length > 1 ? all[all.length-2] : null;
+    const r1 = n => Math.round(n*10)/10;
+    const shortDate = d => fmtDate(d).replace(/^\w+,\s*/, '');
+    const fatMass = m => (m.weight != null && m.bodyFat != null) ? m.weight * m.bodyFat/100 : null;
+
+    // ── Headline: current % and the move since the previous reading ──
+    let delta = '';
+    if(prev) {
+      const d = last.bodyFat - prev.bodyFat;
+      const cls = d < 0 ? 'pos' : d > 0 ? 'neg' : 'flat';
+      const arrow = d < 0 ? '▼' : d > 0 ? '▲' : '▬';
+      delta = `<div class="bf-delta ${cls}">${arrow} ${Math.abs(r1(d))} pts`
+            + `<small>since ${shortDate(prev.date)}</small></div>`;
+    }
+
+    // ── Sparkline across every reading (the "ongoing" part) ──
+    let spark = '';
+    if(all.length > 1) {
+      const W = 320, H = 86, padX = 26, padT = 20, padB = 20;
+      const vals = all.map(m => m.bodyFat);
+      const lo = Math.min(...vals), hi = Math.max(...vals);
+      const range = (hi - lo) || 1;
+      const x = i => padX + (W - padX*2) * (all.length === 1 ? .5 : i/(all.length-1));
+      const y = v => padT + (H - padT - padB) * (1 - (v - lo)/range);
+      const pts = all.map((m, i) => ({x: x(i), y: y(m.bodyFat), m}));
+      const line = pts.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+      const area = `${padX},${H-padB} ${line} ${(W-padX)},${H-padB}`;
+      spark = `<svg class="bf-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+          aria-label="Body fat ${r1(first.bodyFat)}% on ${shortDate(first.date)} falling to ${r1(last.bodyFat)}% on ${shortDate(last.date)}">
+        <polygon points="${area}" fill="rgba(245,158,11,.13)"/>
+        <polyline points="${line}" fill="none" stroke="#f59e0b" stroke-width="2.5"
+          stroke-linejoin="round" stroke-linecap="round"/>
+        ${pts.map((p, i) => {
+          const isLast = i === pts.length - 1;
+          return `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${isLast ? 5 : 3.5}"
+                    fill="${isLast ? '#fbbf24' : '#f59e0b'}" stroke="#0b1220" stroke-width="${isLast ? 2 : 1}"/>`
+            + `<text x="${p.x.toFixed(1)}" y="${(p.y - 9).toFixed(1)}" class="bf-pt">${r1(p.m.bodyFat)}</text>`
+            + `<text x="${p.x.toFixed(1)}" y="${H - 6}" class="bf-dt">${shortDate(p.m.date)}</text>`;
+        }).join('')}
+      </svg>`;
+    }
+
+    // ── Rate of change, so the trend has a speed and not just a direction ──
+    let rate = '';
+    if(all.length > 1) {
+      const days = daysBetween(first.date, last.date);
+      const d = last.bodyFat - first.bodyFat;
+      const perMonth = days > 0 ? d / (days/30.44) : 0;
+      rate = `<div class="bf-rate">${r1(first.bodyFat)}% &rarr; <b>${r1(last.bodyFat)}%</b> over ${days} days`
+           + (days > 0 ? ` · <span class="${perMonth < 0 ? 'pos' : 'neg'}">${perMonth > 0 ? '+' : ''}${r1(perMonth)} pts/month</span>` : '')
+           + `</div>`;
+    }
+
+    // ── Supporting measurements from the latest session, each vs the one before ──
+    const statOf = (label, cur, before, unit, goodDown) => {
+      if(cur == null) return '';
+      let chg = '';
+      if(before != null) {
+        const d = cur - before;
+        const tone = Math.abs(d) < 0.05 ? 'flat' : (goodDown == null ? 'flat' : ((d < 0) === goodDown ? 'pos' : 'neg'));
+        chg = `<span class="bf-chg ${tone}">${d > 0 ? '▲' : d < 0 ? '▼' : '▬'}${Math.abs(r1(d))}</span>`;
+      }
+      return `<div class="bf-stat"><div class="bf-sv">${r1(cur)}<small>${unit}</small></div>`
+           + `<div class="bf-sl">${label}${chg}</div></div>`;
+    };
+    const stats = [
+      statOf('Lean',  leanMassOf(last), prev && leanMassOf(prev), 'kg', false),
+      statOf('Fat',   fatMass(last),    prev && fatMass(prev),    'kg', true),
+      statOf('Waist', last.waist,       prev && prev.waist,       'cm', true),
+      statOf('Weight',last.weight,      prev && prev.weight,      'kg', null),
+    ].join('');
+
+    const sk = caliperSum(last);
+    return `<div class="bf-card">
+      <div class="bf-head">Body fat <span>${shortDate(last.date)}${sk ? ` · ${r1(sk)}mm across 12 sites` : ''}</span></div>
+      <div class="bf-top"><div class="bf-big">${r1(last.bodyFat)}<small>%</small></div>${delta}</div>
+      ${spark}
+      ${rate}
+      <div class="bf-stats">${stats}</div>
+    </div>`;
   },
 
   // Body-composition progress since the FIRST tracked body-fat reading — the
@@ -4497,7 +4622,9 @@ async function initApp() {
       {date:'2026-07-10', weight:113.7, height:193, waist:108.9, bodyFat:27.53, leanMass:82.4,  bfMethod:'caliper',
        calipers:{chin:10.5,cheek:14.5,pec:38.1,triceps:28,subscap:18.9,midax:24.7,supraIliac:34.1,umbilical:47.1,knee:6.1,calf:14.5,quads:19.9,hams:26.9}},
       {date:'2026-08-19', weight:112,   height:193, waist:106.2, bodyFat:25.53, leanMass:83.41, bfMethod:'caliper',
-       calipers:{chin:9.5,cheek:14.3,pec:34.9,triceps:22.3,subscap:17.7,midax:22.3,supraIliac:28.5,umbilical:42.5,knee:5.1,calf:11.1,quads:19.3,hams:26.7}}
+       calipers:{chin:9.5,cheek:14.3,pec:34.9,triceps:22.3,subscap:17.7,midax:22.3,supraIliac:28.5,umbilical:42.5,knee:5.1,calf:11.1,quads:19.3,hams:26.7}},
+      {date:'2026-09-23', weight:110.4, height:193, waist:105.7, bodyFat:24.32, leanMass:83.55, bfMethod:'caliper',
+       calipers:{chin:9.7,cheek:14,pec:30.5,triceps:22.3,subscap:17.3,midax:20.5,supraIliac:25.6,umbilical:36.8,knee:4.9,calf:10.3,quads:18.2,hams:26.9}}
     ];
     const meas = S.get('measurements', []);
     pt.forEach(p => {
