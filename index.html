@@ -718,7 +718,7 @@ textarea{resize:vertical;min-height:80px}
 
 <!-- ════════════════ JAVASCRIPT ════════════════ -->
 <script>
-const APP_VERSION = 73;
+const APP_VERSION = 74;
 
 // Retired features. Dean stopped logging food (Aug 2026), so intake-derived views
 // have nothing to show. These hide the UI only — all stored data (daily[].foods,
@@ -737,7 +737,7 @@ const KJ_TO_KCAL = 1 / 4.184;
 const STEP_INFLATION = 1.78;
 const STEP_FIX_VERSION = 1;
 // Bump when a new PT calliper reading is added to the seed below.
-const PT_SEED_VERSION = 3;
+const PT_SEED_VERSION = 4;
 const correctSteps = (v) => Math.round((Number(v) || 0) / STEP_INFLATION);
 
 /* ── IndexedDB Backup Layer ── */
@@ -4610,7 +4610,7 @@ async function initApp() {
     S.set('_seeded_stats_mar12', true);
   }
 
-  // Seed: PT calliper body-composition readings (14 May, 10 Jul, 19 Aug 2026).
+  // Seed: PT calliper body-composition readings (14 May, 10 Jul, 19 Aug, 23 Sep, 4 Nov 2026).
   // Callipers are accurate (Dean's PT), so these are the source of truth for
   // body-fat %, lean mass and per-site skinfolds. Idempotent: merges by date.
   // Versioned rather than a boolean so a new PT reading can be appended here and
@@ -4624,7 +4624,9 @@ async function initApp() {
       {date:'2026-08-19', weight:112,   height:193, waist:106.2, bodyFat:25.53, leanMass:83.41, bfMethod:'caliper',
        calipers:{chin:9.5,cheek:14.3,pec:34.9,triceps:22.3,subscap:17.7,midax:22.3,supraIliac:28.5,umbilical:42.5,knee:5.1,calf:11.1,quads:19.3,hams:26.7}},
       {date:'2026-09-23', weight:110.4, height:193, waist:105.7, bodyFat:24.32, leanMass:83.55, bfMethod:'caliper',
-       calipers:{chin:9.7,cheek:14,pec:30.5,triceps:22.3,subscap:17.3,midax:20.5,supraIliac:25.6,umbilical:36.8,knee:4.9,calf:10.3,quads:18.2,hams:26.9}}
+       calipers:{chin:9.7,cheek:14,pec:30.5,triceps:22.3,subscap:17.3,midax:20.5,supraIliac:25.6,umbilical:36.8,knee:4.9,calf:10.3,quads:18.2,hams:26.9}},
+      {date:'2026-11-04', weight:105.9, height:193, waist:106.8, bodyFat:23.37, leanMass:81.15, bfMethod:'caliper',
+       calipers:{chin:9.7,cheek:13.8,pec:30,triceps:18.4,subscap:15.9,midax:19,supraIliac:21.9,umbilical:35.3,knee:4.6,calf:9.1,quads:14.2,hams:20.2}}
     ];
     const meas = S.get('measurements', []);
     pt.forEach(p => {
